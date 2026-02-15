@@ -233,7 +233,8 @@ which claude
 
 - Check internet connectivity
 - Verify your platform is supported (macOS, Linux, Windows)
-- Download manually from: `https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/`
+- The download URL is constructed as: `{base_url}/{version}/{platform}/claude`
+  - Example: `https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/v2.1.42/darwin-arm64/claude`
 
 ### Model List Empty
 

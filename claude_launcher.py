@@ -41,20 +41,25 @@ from PySide6.QtGui import QFont, QFontDatabase, QTextCursor
 # ============================================================================
 
 # Claude Code download base URL pattern
-# Format: {base_url}/{version}/claude-os-arch-{version}.tar.gz
+# Format: {base_url}/{version}/{platform}/claude
+# Platform examples: darwin-arm64, darwin-amd64, linux-arm64, linux-amd64, linux-arm64-musl, etc.
 CLAUDE_DOWNLOAD_BASE = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases"
 
 # CHANGELOG URL for fetching latest version
 CHANGELOG_URL = "https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md"
 
-# Download filename patterns by OS
+# Download platform names by OS and architecture
+# Platform format varies by OS:
+#   - macOS: darwin-x64, darwin-arm64
+#   - Linux: linux-x64, linux-arm64, linux-x64-musl, linux-arm64-musl
+#   - Windows: win32-x64, win32-arm64
 OS_ARCH_MAP = {
-    ("darwin", "x86_64"): "darwin-amd64",
+    ("darwin", "x64"): "darwin-x64",
     ("darwin", "arm64"): "darwin-arm64",
-    ("linux", "x86_64"): "linux-amd64",
+    ("linux", "x64"): "linux-x64",
     ("linux", "arm64"): "linux-arm64",
-    ("win32", "x86_64"): "windows-amd64",
-    ("win32", "arm64"): "windows-arm64",
+    ("win32", "x64"): "win32-x64",
+    ("win32", "arm64"): "win32-arm64",
 }
 
 # Claude Code launcher constants
@@ -160,14 +165,29 @@ class OSChecker:
 
     @staticmethod
     def get_architecture() -> str:
-        """Return the CPU architecture."""
+        """Return the CPU architecture in GCS format (x64 or arm64)."""
         import platform
         arch = platform.machine().lower()
         if arch in ("x86_64", "amd64"):
-            return "x86_64"
+            return "x64"
         elif arch in ("arm64", "aarch64"):
             return "arm64"
         return arch
+
+    @staticmethod
+    def _is_musl_linux() -> bool:
+        """Check if running on musl libc Linux."""
+        import subprocess
+        try:
+            # Check for musl libc
+            result = subprocess.run(
+                ["ldd", "/bin/ls"], capture_output=True, text=True, timeout=5
+            )
+            return "musl" in result.stdout.lower()
+        except Exception:
+            # Fallback: check for musl files
+            import os
+            return os.path.exists("/lib/libc.musl-x86_64.so.1") or os.path.exists("/lib/libc.musl-aarch64.so.1")
 
     @staticmethod
     def get_download_info() -> Tuple[str, Optional[str]]:
@@ -180,7 +200,11 @@ class OSChecker:
 
         key = (os_name, arch)
         if key in OS_ARCH_MAP:
-            return os_name, OS_ARCH_MAP[key]
+            platform_name = OS_ARCH_MAP[key]
+            # For Linux, check for musl and append -musl if needed
+            if os_name == "linux" and OSChecker._is_musl_linux():
+                platform_name = f"{platform_name}-musl"
+            return platform_name, arch
         return None, None
 
     @staticmethod
@@ -406,11 +430,11 @@ class ClaudeInstaller(QThread):
         if not os_name or not arch_name or not self._latest_version:
             return None
 
-        # Determine file extension based on platform
-        ext = ".zip" if sys.platform == "win32" else ".tar.gz"
+        # Platform format: darwin-arm64, linux-amd64, etc.
+        platform = arch_name  # arch_name is already in format like "darwin-arm64"
 
-        # URL pattern: .../{version}/claude-{arch}-{version}.tar.gz or .zip
-        return f"{CLAUDE_DOWNLOAD_BASE}/{self._latest_version}/claude-{arch_name}-{self._latest_version}{ext}"
+        # URL pattern: .../{version}/{platform}/claude
+        return f"{CLAUDE_DOWNLOAD_BASE}/{self._latest_version}/{platform}/claude"
 
     def _download_file(self, url: str, dest_path: Path) -> bool:
         """Download file with progress reporting."""
@@ -437,50 +461,6 @@ class ClaudeInstaller(QThread):
             self.error.emit(str(e))
             return False
 
-    def _extract_tarball(self, tar_path: Path) -> bool:
-        """Extract tarball to download directory."""
-        try:
-            self.progress.emit(0, "Extracting archive...")
-
-            if sys.platform == "win32":
-                # Windows extraction
-                import zipfile
-                with zipfile.ZipFile(tar_path, 'r') as zip_ref:
-                    # Find the claude.exe in the archive
-                    for member in zip_ref.namelist():
-                        if self.cancelled:
-                            return False
-                        zip_ref.extract(member, self.download_dir)
-            else:
-                # Unix-like systems - use tar command
-                result = subprocess.run(
-                    ["tar", "-xzf", str(tar_path), "-C", str(self.download_dir)],
-                    capture_output=True,
-                    text=True,
-                    timeout=60
-                )
-                if result.returncode != 0:
-                    self.error.emit(f"Extraction failed: {result.stderr}")
-                    return False
-
-            return True
-        except Exception as e:
-            self.error.emit(str(e))
-            return False
-
-    def _locate_claude_binary(self) -> Optional[Path]:
-        """Find the claude binary after extraction."""
-        # Look for claude or claude.exe in download directory
-        for f in self.download_dir.iterdir():
-            if f.name == "claude" or f.name == "claude.exe":
-                return f
-        # Also check in subdirectories
-        for root, dirs, files in os.walk(self.download_dir):
-            for f in files:
-                if f == "claude" or f == "claude.exe":
-                    return Path(root) / f
-        return None
-
     def run(self):
         """Main download and install workflow."""
         if not self._latest_version:
@@ -501,37 +481,25 @@ class ClaudeInstaller(QThread):
             self.finished.emit(False, "Unsupported platform for automatic download")
             return
 
-        # Download file
-        # Determine file extension based on platform
-        ext = ".zip" if sys.platform == "win32" else ".tar.gz"
-        tar_path = self.download_dir / f"claude-{self._latest_version}{ext}"
-        if not self._download_file(url, tar_path):
+        # Determine output path for the binary
+        # The binary is downloaded directly without archive
+        binary_name = "claude.exe" if sys.platform == "win32" else "claude"
+        binary_path = self.download_dir / binary_name
+
+        # Download the binary directly
+        if not self._download_file(url, binary_path):
             if not self.cancelled:
                 self.finished.emit(False, "Download failed")
             return
 
-        # Extract archive
-        if not self._extract_tarball(tar_path):
-            if not self.cancelled:
-                tar_path.unlink(missing_ok=True)
-                self.finished.emit(False, "Extraction failed")
-            return
+        # Set executable permission on Unix-like systems
+        if sys.platform != "win32":
+            try:
+                binary_path.chmod(binary_path.stat().st_mode | stat.S_IXUSR)
+            except Exception:
+                pass
 
-        # Clean up archive
-        tar_path.unlink(missing_ok=True)
-
-        # Locate installed binary
-        binary = self._locate_claude_binary()
-        if binary:
-            # Make executable on Unix
-            if sys.platform != "win32":
-                try:
-                    binary.chmod(binary.stat().st_mode | stat.S_IXUSR)
-                except Exception:
-                    pass
-            self.finished.emit(True, str(binary))
-        else:
-            self.finished.emit(False, "Installation complete but binary not found")
+        self.finished.emit(True, str(binary_path))
 
 
 # ============================================================================
@@ -728,6 +696,13 @@ class ClaudeLauncherWindow(QMainWindow):
         status = "supported" if supported else "unsupported"
         return f"{os_name}/{arch} ({status})"
 
+    def _get_download_url(self, version: str) -> Optional[str]:
+        """Build the full download URL for a given version."""
+        platform, _ = OSChecker.get_download_info()
+        if not platform:
+            return None
+        return f"{CLAUDE_DOWNLOAD_BASE}/{version}/{platform}/claude"
+
     @staticmethod
     def _mono_font(size: int = 11) -> QFont:
         if sys.platform == "darwin":
@@ -888,10 +863,13 @@ class ClaudeLauncherWindow(QMainWindow):
         info_label = QLabel("")
         info_label.setWordWrap(True)
         info_label.setStyleSheet("color: #888; font-size: 11px;")
-        info_label.setText(
-            f"Platform: {self._get_platform_info()} | "
-            f"Download URL: {CLAUDE_DOWNLOAD_BASE}"
-        )
+        platform, _ = OSChecker.get_download_info()
+        if platform:
+            url = self._get_download_url("vX.Y.Z")
+            info_text = f"Platform: {platform} | Download URL: {url or 'N/A'}"
+        else:
+            info_text = f"Platform: Unsupported ({self._get_platform_info()})"
+        info_label.setText(info_text)
         inst_lay.addWidget(info_label)
 
         layout.addWidget(inst_grp)
@@ -1182,8 +1160,10 @@ class ClaudeLauncherWindow(QMainWindow):
             return
 
         # Confirm installation
+        platform, _ = OSChecker.get_download_info()
         msg = f"Install Claude Code v{latest_version}?\n\n"
-        msg += f"Download location: {CLAUDE_DOWNLOAD_BASE}/{latest_version}/\n"
+        msg += f"Platform: {platform}\n"
+        msg += f"Download URL: {CLAUDE_DOWNLOAD_BASE}/{latest_version}/{platform}/claude\n"
         msg += "This will download approximately 20-30 MB."
 
         reply = QMessageBox.question(
