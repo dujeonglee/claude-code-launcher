@@ -160,7 +160,7 @@ class OSChecker:
         elif sys.platform == "linux":
             return "linux"
         elif sys.platform == "win32":
-            return "windows"
+            return "win32"
         return "unknown"
 
     @staticmethod
