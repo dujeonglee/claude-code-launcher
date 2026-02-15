@@ -426,15 +426,12 @@ class ClaudeInstaller(QThread):
 
     def get_download_url(self) -> Optional[str]:
         """Build the download URL for current platform."""
-        os_name, arch_name = OSChecker.get_download_info()
-        if not os_name or not arch_name or not self._latest_version:
+        platform_name, _ = OSChecker.get_download_info()
+        if not platform_name or not self._latest_version:
             return None
 
-        # Platform format: darwin-arm64, linux-amd64, etc.
-        platform = arch_name  # arch_name is already in format like "darwin-arm64"
-
         # URL pattern: .../{version}/{platform}/claude
-        return f"{CLAUDE_DOWNLOAD_BASE}/{self._latest_version}/{platform}/claude"
+        return f"{CLAUDE_DOWNLOAD_BASE}/{self._latest_version}/{platform_name}/claude"
 
     def _download_file(self, url: str, dest_path: Path) -> bool:
         """Download file with progress reporting."""
