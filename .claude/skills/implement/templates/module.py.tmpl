@@ -1,0 +1,49 @@
+"""${MODULE_NAME} — ${ONE_LINE_DESCRIPTION}.
+
+This module provides ${BRIEF_EXPLANATION}.
+
+Example:
+    >>> from ${PACKAGE}.${MODULE_NAME} import ${PRIMARY_CLASS}
+    >>> obj = ${PRIMARY_CLASS}(${EXAMPLE_ARGS})
+    >>> obj.${EXAMPLE_METHOD}()
+
+Attributes:
+    ${MODULE_LEVEL_CONSTANT}: ${DESCRIPTION}
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    pass  # Type-only imports here
+
+__all__ = ["${PRIMARY_CLASS}"]
+
+logger = logging.getLogger(__name__)
+
+
+class ${PRIMARY_CLASS}:
+    """${CLASS_DESCRIPTION}.
+
+    Args:
+        ${PARAM}: ${PARAM_DESCRIPTION}
+
+    Example:
+        >>> obj = ${PRIMARY_CLASS}(${EXAMPLE_ARGS})
+    """
+
+    def __init__(self, ${PARAMS}) -> None:
+        self._${FIELD} = ${FIELD}
+
+    def ${PRIMARY_METHOD}(self) -> ${RETURN_TYPE}:
+        """${METHOD_DESCRIPTION}.
+
+        Returns:
+            ${RETURN_DESCRIPTION}
+
+        Raises:
+            ${EXCEPTION}: ${WHEN_RAISED}
+        """
+        raise NotImplementedError

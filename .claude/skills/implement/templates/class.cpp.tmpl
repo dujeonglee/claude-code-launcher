@@ -1,0 +1,78 @@
+// ──── ${CLASS_NAME}.h ────────────────────────────────────────────────
+#pragma once
+
+#include <memory>
+#include <string>
+#include <expected>
+
+namespace ${NAMESPACE} {
+
+/// Error type for ${CLASS_NAME} operations.
+enum class ${CLASS_NAME}Error {
+    ${ERROR_VARIANT_1},
+    ${ERROR_VARIANT_2},
+};
+
+/**
+ * @brief ${CLASS_DESCRIPTION}.
+ *
+ * ${DETAILED_DESCRIPTION}
+ *
+ * @example
+ * @code
+ * auto obj = ${CLASS_NAME}::create(${EXAMPLE_ARGS});
+ * if (obj) {
+ *     obj->doWork();
+ * }
+ * @endcode
+ */
+class ${CLASS_NAME} {
+public:
+    /// Factory method — prefer over direct construction.
+    [[nodiscard]] static std::expected<${CLASS_NAME}, ${CLASS_NAME}Error>
+    create(${FACTORY_PARAMS});
+
+    ~${CLASS_NAME}();
+
+    // Move-only (no copy)
+    ${CLASS_NAME}(${CLASS_NAME}&&) noexcept;
+    ${CLASS_NAME}& operator=(${CLASS_NAME}&&) noexcept;
+    ${CLASS_NAME}(const ${CLASS_NAME}&) = delete;
+    ${CLASS_NAME}& operator=(const ${CLASS_NAME}&) = delete;
+
+    /// ${METHOD_DESCRIPTION}
+    [[nodiscard]] std::expected<${RETURN_TYPE}, ${CLASS_NAME}Error>
+    ${METHOD_NAME}(${METHOD_PARAMS}) const;
+
+private:
+    explicit ${CLASS_NAME}(${CONSTRUCTOR_PARAMS});
+
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
+};
+
+} // namespace ${NAMESPACE}
+
+
+// ──── ${CLASS_NAME}.cpp ─────────────────────────────────────────────
+// #include "${CLASS_NAME}.h"
+//
+// namespace ${NAMESPACE} {
+//
+// struct ${CLASS_NAME}::Impl {
+//     // Private implementation details
+// };
+//
+// ${CLASS_NAME}::${CLASS_NAME}(${CONSTRUCTOR_PARAMS})
+//     : impl_(std::make_unique<Impl>()) {}
+//
+// ${CLASS_NAME}::~${CLASS_NAME}() = default;
+// ${CLASS_NAME}::${CLASS_NAME}(${CLASS_NAME}&&) noexcept = default;
+// ${CLASS_NAME}& ${CLASS_NAME}::operator=(${CLASS_NAME}&&) noexcept = default;
+//
+// std::expected<${CLASS_NAME}, ${CLASS_NAME}Error>
+// ${CLASS_NAME}::create(${FACTORY_PARAMS}) {
+//     // Validate parameters, construct, return
+// }
+//
+// } // namespace ${NAMESPACE}

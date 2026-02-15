@@ -1,0 +1,74 @@
+# Claude Code Launcher Agent Configuration
+
+# Global settings
+settings:
+  model: claude-opus-4-6
+  max_tokens: 8192
+
+# Agent-specific configuration
+agents:
+  implementer:
+    priority_files:
+      - claude_launcher.py
+      - requirements.txt
+      - DEVELOPMENT.md
+    language: python
+    framework: pyside6
+    style_guide: PEP 8
+
+  verifier:
+    test_patterns:
+      - "test_*.py"
+      - "*_test.py"
+    coverage_target: 70
+    static_analysis:
+      - py_compile
+      - mypy
+      - pylint
+
+  auditor:
+    security_checks:
+      - OWASP Top 10
+      - Secret detection
+      - Dependency vulnerabilities
+    architecture_review:
+      - Circular dependencies
+      - God modules
+      - Layering violations
+
+  documenter:
+    doc_format: Google style
+    readme_structure: standard
+    changelog_format: keepachangelog
+    target_audience: developers
+
+# Workflow configuration
+workflow:
+  sdlc_pipeline:
+    - implement
+    - verify
+    - audit
+    - document
+  quality_gates:
+    code_compiles: true
+    tests_pass: true
+    coverage_threshold: 0.70
+    no_critical_findings: true
+    docs_complete: true
+
+# Documentation locations
+docs:
+  root: /
+  architecture: docs/architecture.md
+  api: API.md
+  changelog: CHANGELOG.md
+  development: DEVELOPMENT.md
+  agents: .claude/README.md
+
+# Patterns to ignore in analysis
+ignore:
+  - __pycache__/
+  - *.pyc
+  - .git/
+  - node_modules/
+  - .env

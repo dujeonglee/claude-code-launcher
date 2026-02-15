@@ -1,0 +1,40 @@
+import { type FC, useState, useCallback } from "react";
+
+// ─── Types ──────────────────────────────────────────────────────────
+interface ${COMPONENT_NAME}Props {
+  /** ${PROP_DESCRIPTION} */
+  ${PROP_NAME}: ${PROP_TYPE};
+  /** Optional callback when ${EVENT_DESCRIPTION}. */
+  on${EVENT_NAME}?: (value: ${EVENT_TYPE}) => void;
+}
+
+// ─── Component ──────────────────────────────────────────────────────
+
+/**
+ * ${COMPONENT_DESCRIPTION}.
+ *
+ * @example
+ * ```tsx
+ * <${COMPONENT_NAME} ${PROP_NAME}={${EXAMPLE_VALUE}} />
+ * ```
+ */
+export const ${COMPONENT_NAME}: FC<${COMPONENT_NAME}Props> = ({
+  ${PROP_NAME},
+  on${EVENT_NAME},
+}) => {
+  const [state, setState] = useState<${STATE_TYPE}>(${INITIAL_STATE});
+
+  const handleAction = useCallback(() => {
+    // TODO: implement
+    on${EVENT_NAME}?.(state);
+  }, [state, on${EVENT_NAME}]);
+
+  return (
+    <div data-testid="${COMPONENT_NAME_KEBAB}">
+      {/* TODO: implement UI */}
+    </div>
+  );
+};
+
+${COMPONENT_NAME}.displayName = "${COMPONENT_NAME}";
+export default ${COMPONENT_NAME};

@@ -1,0 +1,84 @@
+"""Tests for ${MODULE_NAME}.
+
+Test naming convention: test_<function>_<scenario>_<expected_result>
+"""
+
+from __future__ import annotations
+
+from unittest.mock import MagicMock, patch
+from typing import TYPE_CHECKING
+
+import pytest
+
+# from ${PACKAGE}.${MODULE_NAME} import ${CLASS_UNDER_TEST}
+
+if TYPE_CHECKING:
+    pass
+
+
+# ─── Fixtures ────────────────────────────────────────────────────────
+
+@pytest.fixture
+def ${FIXTURE_NAME}():
+    """Create a ${FIXTURE_DESCRIPTION}."""
+    # Arrange
+    return None  # TODO: create test fixture
+
+
+# ─── Happy Path ──────────────────────────────────────────────────────
+
+class Test${CLASS_UNDER_TEST}:
+    """Tests for ${CLASS_UNDER_TEST}."""
+
+    def test_${METHOD}_with_valid_input_returns_expected(self, ${FIXTURE_NAME}):
+        """${METHOD} should return expected result for valid input."""
+        # Arrange
+        expected = None  # TODO
+
+        # Act
+        result = None  # TODO: call method under test
+
+        # Assert
+        assert result == expected
+
+    def test_${METHOD}_with_valid_input_persists_state(self, ${FIXTURE_NAME}):
+        """${METHOD} should update internal state correctly."""
+        # Arrange / Act
+        pass  # TODO
+
+        # Assert
+        pass  # TODO: verify side effects
+
+
+# ─── Edge Cases ──────────────────────────────────────────────────────
+
+class Test${CLASS_UNDER_TEST}EdgeCases:
+    """Edge case tests for ${CLASS_UNDER_TEST}."""
+
+    def test_${METHOD}_with_empty_input_returns_default(self):
+        """${METHOD} should handle empty input gracefully."""
+        pass  # TODO
+
+    def test_${METHOD}_with_none_raises_type_error(self):
+        """${METHOD} should reject None input."""
+        with pytest.raises(TypeError):
+            pass  # TODO
+
+
+# ─── Error Paths ─────────────────────────────────────────────────────
+
+class Test${CLASS_UNDER_TEST}Errors:
+    """Error handling tests for ${CLASS_UNDER_TEST}."""
+
+    def test_${METHOD}_with_invalid_input_raises_value_error(self):
+        """${METHOD} should raise ValueError for invalid input."""
+        with pytest.raises(ValueError, match="expected pattern"):
+            pass  # TODO
+
+    def test_${METHOD}_when_dependency_fails_raises_service_error(self):
+        """${METHOD} should wrap dependency failures."""
+        mock_dep = MagicMock()
+        mock_dep.call.side_effect = ConnectionError("timeout")
+
+        with pytest.raises(Exception):  # TODO: use specific exception
+            pass  # TODO

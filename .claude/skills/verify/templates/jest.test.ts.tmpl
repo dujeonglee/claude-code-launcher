@@ -1,0 +1,77 @@
+/**
+ * Tests for ${MODULE_NAME}.
+ *
+ * Convention: describe("<Unit>") → it("should <behavior> when <condition>")
+ */
+
+import { describe, it, expect, beforeEach, vi } from "vitest";
+
+// import { ${CLASS_UNDER_TEST} } from "./${MODULE_NAME}";
+
+describe("${CLASS_UNDER_TEST}", () => {
+  // let instance: ${CLASS_UNDER_TEST};
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // instance = new ${CLASS_UNDER_TEST}();
+  });
+
+  // ─── Happy Path ─────────────────────────────────────────────────
+
+  describe("${METHOD_NAME}", () => {
+    it("should return expected result for valid input", () => {
+      // Arrange
+      const input = undefined; // TODO
+
+      // Act
+      const result = undefined; // TODO: call method
+
+      // Assert
+      expect(result).toBeDefined();
+      // expect(result).toEqual(expected);
+    });
+
+    it("should call dependency with correct arguments", () => {
+      // Arrange
+      const mockDep = vi.fn().mockReturnValue("ok");
+
+      // Act
+      // TODO: call method with mock
+
+      // Assert
+      expect(mockDep).toHaveBeenCalledWith(/* expected args */);
+    });
+  });
+
+  // ─── Edge Cases ─────────────────────────────────────────────────
+
+  describe("edge cases", () => {
+    it("should handle empty input gracefully", () => {
+      // TODO
+      expect(true).toBe(true); // placeholder
+    });
+
+    it("should handle undefined optional parameters", () => {
+      // TODO
+      expect(true).toBe(true); // placeholder
+    });
+  });
+
+  // ─── Error Handling ─────────────────────────────────────────────
+
+  describe("error handling", () => {
+    it("should throw ValidationError for invalid input", () => {
+      expect(() => {
+        // TODO: call with invalid input
+      }).toThrow(/* ValidationError */);
+    });
+
+    it("should propagate dependency errors with context", async () => {
+      // Arrange
+      const mockDep = vi.fn().mockRejectedValue(new Error("network"));
+
+      // Act & Assert
+      // await expect(instance.method()).rejects.toThrow("network");
+    });
+  });
+});
