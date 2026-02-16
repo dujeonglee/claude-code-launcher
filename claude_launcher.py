@@ -703,7 +703,9 @@ class ClaudeLauncherWindow(QMainWindow):
         platform, _ = OSChecker.get_download_info()
         if not platform:
             return None
-        return f"{CLAUDE_DOWNLOAD_BASE}/{version}/{platform}/claude"
+        # Windows binaries have .exe extension
+        binary_name = "claude.exe" if platform.startswith("win32") else "claude"
+        return f"{CLAUDE_DOWNLOAD_BASE}/{version}/{platform}/{binary_name}"
 
     @staticmethod
     def _mono_font(size: int = 11) -> QFont:
@@ -1063,11 +1065,14 @@ class ClaudeLauncherWindow(QMainWindow):
             self.models_label.setText("⚠  No models found")
 
     def _auto_detect_claude(self):
-        path = shutil.which("claude")
+        # Check for claude.exe on Windows first
+        binary_name = "claude.exe" if sys.platform == "win32" else "claude"
+        path = shutil.which(binary_name)
         if path:
             self.claude_path_edit.setText(path)
             self.status_bar.showMessage(f"Found: {path}", 5000)
             return
+        # Check common Unix paths
         for p in [Path.home() / ".npm-global" / "bin" / "claude",
                   Path.home() / ".local" / "bin" / "claude",
                   Path("/usr/local/bin/claude")]:
@@ -1163,9 +1168,11 @@ class ClaudeLauncherWindow(QMainWindow):
 
         # Confirm installation
         platform, _ = OSChecker.get_download_info()
+        # Windows binaries have .exe extension
+        binary_name = "claude.exe" if platform.startswith("win32") else "claude"
         msg = f"Install Claude Code v{latest_version}?\n\n"
         msg += f"Platform: {platform}\n"
-        msg += f"Download URL: {CLAUDE_DOWNLOAD_BASE}/{latest_version}/{platform}/claude\n"
+        msg += f"Download URL: {CLAUDE_DOWNLOAD_BASE}/{latest_version}/{platform}/{binary_name}\n"
         msg += "This will download approximately 20-30 MB."
 
         reply = QMessageBox.question(
