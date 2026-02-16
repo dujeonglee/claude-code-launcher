@@ -130,7 +130,6 @@ class TestDownloadURLBuilder:
             with patch("platform.machine", return_value="x86_64"):
                 version = "2.1.42"
                 expected_url = f"{CLAUDE_DOWNLOAD_BASE}/{version}/darwin-x64/claude"
-
                 from claude_launcher import ClaudeInstaller
                 installer = ClaudeInstaller(MagicMock())
                 installer._latest_version = version
@@ -144,7 +143,6 @@ class TestDownloadURLBuilder:
             with patch("platform.machine", return_value="arm64"):
                 version = "2.1.42"
                 expected_url = f"{CLAUDE_DOWNLOAD_BASE}/{version}/darwin-arm64/claude"
-
                 from claude_launcher import ClaudeInstaller
                 installer = ClaudeInstaller(MagicMock())
                 installer._latest_version = version
@@ -158,7 +156,6 @@ class TestDownloadURLBuilder:
             with patch("platform.machine", return_value="x86_64"):
                 version = "2.1.42"
                 expected_url = f"{CLAUDE_DOWNLOAD_BASE}/{version}/linux-x64/claude"
-
                 from claude_launcher import ClaudeInstaller
                 installer = ClaudeInstaller(MagicMock())
                 installer._latest_version = version
@@ -172,7 +169,6 @@ class TestDownloadURLBuilder:
             with patch("platform.machine", return_value="arm64"):
                 version = "2.1.42"
                 expected_url = f"{CLAUDE_DOWNLOAD_BASE}/{version}/linux-arm64/claude"
-
                 from claude_launcher import ClaudeInstaller
                 installer = ClaudeInstaller(MagicMock())
                 installer._latest_version = version
@@ -186,7 +182,6 @@ class TestDownloadURLBuilder:
             with patch("platform.machine", return_value="x86_64"):
                 version = "2.1.42"
                 expected_url = f"{CLAUDE_DOWNLOAD_BASE}/{version}/linux-x64-musl/claude"
-
                 from claude_launcher import ClaudeInstaller
                 installer = ClaudeInstaller(MagicMock())
                 installer._latest_version = version
@@ -200,8 +195,7 @@ class TestDownloadURLBuilder:
         with patch("sys.platform", "win32"):
             with patch("platform.machine", return_value="x86_64"):
                 version = "2.1.42"
-                expected_url = f"{CLAUDE_DOWNLOAD_BASE}/{version}/win32-x64/claude"
-
+                expected_url = f"{CLAUDE_DOWNLOAD_BASE}/{version}/win32-x64/claude.exe"
                 from claude_launcher import ClaudeInstaller
                 installer = ClaudeInstaller(MagicMock())
                 installer._latest_version = version
@@ -214,8 +208,7 @@ class TestDownloadURLBuilder:
         with patch("sys.platform", "win32"):
             with patch("platform.machine", return_value="arm64"):
                 version = "2.1.42"
-                expected_url = f"{CLAUDE_DOWNLOAD_BASE}/{version}/win32-arm64/claude"
-
+                expected_url = f"{CLAUDE_DOWNLOAD_BASE}/{version}/win32-arm64/claude.exe"
                 from claude_launcher import ClaudeInstaller
                 installer = ClaudeInstaller(MagicMock())
                 installer._latest_version = version
@@ -254,6 +247,56 @@ class TestURLFormat:
                 # Verify no archive extension
                 assert not url.endswith(".tar.gz")
                 assert not url.endswith(".zip")
+
+
+class TestWindowsExeExtension:
+    """Tests for Windows .exe extension in download URL."""
+
+    def test_windows_x64_url_ends_with_exe(self):
+        """Verify Windows x64 URL ends with .exe."""
+        with patch("sys.platform", "win32"):
+            with patch("platform.machine", return_value="x86_64"):
+                from claude_launcher import ClaudeInstaller
+                installer = ClaudeInstaller(MagicMock())
+                installer._latest_version = "2.1.42"
+
+                url = installer.get_download_url()
+                assert url.endswith("/claude.exe")
+
+    def test_windows_arm64_url_ends_with_exe(self):
+        """Verify Windows ARM64 URL ends with .exe."""
+        with patch("sys.platform", "win32"):
+            with patch("platform.machine", return_value="arm64"):
+                from claude_launcher import ClaudeInstaller
+                installer = ClaudeInstaller(MagicMock())
+                installer._latest_version = "2.1.42"
+
+                url = installer.get_download_url()
+                assert url.endswith("/claude.exe")
+
+    def test_non_windows_urls_do_not_end_with_exe(self):
+        """Verify non-Windows URLs do not end with .exe."""
+        # macOS x64
+        with patch("sys.platform", "darwin"):
+            with patch("platform.machine", return_value="x86_64"):
+                from claude_launcher import ClaudeInstaller
+                installer = ClaudeInstaller(MagicMock())
+                installer._latest_version = "2.1.42"
+
+                url = installer.get_download_url()
+                assert url.endswith("/claude")
+                assert not url.endswith(".exe")
+
+        # Linux x64
+        with patch("sys.platform", "linux"):
+            with patch("platform.machine", return_value="x86_64"):
+                from claude_launcher import ClaudeInstaller
+                installer = ClaudeInstaller(MagicMock())
+                installer._latest_version = "2.1.42"
+
+                url = installer.get_download_url()
+                assert url.endswith("/claude")
+                assert not url.endswith(".exe")
 
 
 class TestIsMuslLinux:

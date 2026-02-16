@@ -430,8 +430,13 @@ class ClaudeInstaller(QThread):
         if not platform_name or not self._latest_version:
             return None
 
-        # URL pattern: .../{version}/{platform}/claude
-        return f"{CLAUDE_DOWNLOAD_BASE}/{self._latest_version}/{platform_name}/claude"
+        # URL pattern: .../{version}/{platform}/claude(.exe)
+        # Windows binaries have .exe extension
+        if platform_name.startswith("win32"):
+            binary_name = "claude.exe"
+        else:
+            binary_name = "claude"
+        return f"{CLAUDE_DOWNLOAD_BASE}/{self._latest_version}/{platform_name}/{binary_name}"
 
     def _download_file(self, url: str, dest_path: Path) -> bool:
         """Download file with progress reporting."""
