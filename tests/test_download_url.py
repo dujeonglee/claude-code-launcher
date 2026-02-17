@@ -6,7 +6,9 @@ Tests verify that download URLs are correctly constructed for all
 supported platform combinations.
 """
 
+import os
 import sys
+from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 # Add parent directory to path for imports
@@ -131,7 +133,7 @@ class TestDownloadURLBuilder:
                 version = "2.1.42"
                 expected_url = f"{CLAUDE_DOWNLOAD_BASE}/{version}/darwin-x64/claude"
                 from claude_launcher import ClaudeInstaller
-                installer = ClaudeInstaller(MagicMock())
+                installer = ClaudeInstaller()
                 installer._latest_version = version
 
                 url = installer.get_download_url()
@@ -144,7 +146,7 @@ class TestDownloadURLBuilder:
                 version = "2.1.42"
                 expected_url = f"{CLAUDE_DOWNLOAD_BASE}/{version}/darwin-arm64/claude"
                 from claude_launcher import ClaudeInstaller
-                installer = ClaudeInstaller(MagicMock())
+                installer = ClaudeInstaller()
                 installer._latest_version = version
 
                 url = installer.get_download_url()
@@ -157,7 +159,7 @@ class TestDownloadURLBuilder:
                 version = "2.1.42"
                 expected_url = f"{CLAUDE_DOWNLOAD_BASE}/{version}/linux-x64/claude"
                 from claude_launcher import ClaudeInstaller
-                installer = ClaudeInstaller(MagicMock())
+                installer = ClaudeInstaller()
                 installer._latest_version = version
 
                 url = installer.get_download_url()
@@ -170,7 +172,7 @@ class TestDownloadURLBuilder:
                 version = "2.1.42"
                 expected_url = f"{CLAUDE_DOWNLOAD_BASE}/{version}/linux-arm64/claude"
                 from claude_launcher import ClaudeInstaller
-                installer = ClaudeInstaller(MagicMock())
+                installer = ClaudeInstaller()
                 installer._latest_version = version
 
                 url = installer.get_download_url()
@@ -183,7 +185,7 @@ class TestDownloadURLBuilder:
                 version = "2.1.42"
                 expected_url = f"{CLAUDE_DOWNLOAD_BASE}/{version}/linux-x64-musl/claude"
                 from claude_launcher import ClaudeInstaller
-                installer = ClaudeInstaller(MagicMock())
+                installer = ClaudeInstaller()
                 installer._latest_version = version
 
                 with patch.object(OSChecker, "_is_musl_linux", return_value=True):
@@ -197,7 +199,7 @@ class TestDownloadURLBuilder:
                 version = "2.1.42"
                 expected_url = f"{CLAUDE_DOWNLOAD_BASE}/{version}/win32-x64/claude.exe"
                 from claude_launcher import ClaudeInstaller
-                installer = ClaudeInstaller(MagicMock())
+                installer = ClaudeInstaller()
                 installer._latest_version = version
 
                 url = installer.get_download_url()
@@ -210,7 +212,7 @@ class TestDownloadURLBuilder:
                 version = "2.1.42"
                 expected_url = f"{CLAUDE_DOWNLOAD_BASE}/{version}/win32-arm64/claude.exe"
                 from claude_launcher import ClaudeInstaller
-                installer = ClaudeInstaller(MagicMock())
+                installer = ClaudeInstaller()
                 installer._latest_version = version
 
                 url = installer.get_download_url()
@@ -233,7 +235,7 @@ class TestURLFormat:
                 platform_name, _ = OSChecker.get_download_info()
 
                 from claude_launcher import ClaudeInstaller
-                installer = ClaudeInstaller(MagicMock())
+                installer = ClaudeInstaller()
                 installer._latest_version = version
 
                 url = installer.get_download_url()
@@ -257,7 +259,7 @@ class TestWindowsExeExtension:
         with patch("sys.platform", "win32"):
             with patch("platform.machine", return_value="x86_64"):
                 from claude_launcher import ClaudeInstaller
-                installer = ClaudeInstaller(MagicMock())
+                installer = ClaudeInstaller()
                 installer._latest_version = "2.1.42"
 
                 url = installer.get_download_url()
@@ -268,7 +270,7 @@ class TestWindowsExeExtension:
         with patch("sys.platform", "win32"):
             with patch("platform.machine", return_value="arm64"):
                 from claude_launcher import ClaudeInstaller
-                installer = ClaudeInstaller(MagicMock())
+                installer = ClaudeInstaller()
                 installer._latest_version = "2.1.42"
 
                 url = installer.get_download_url()
@@ -280,7 +282,7 @@ class TestWindowsExeExtension:
         with patch("sys.platform", "darwin"):
             with patch("platform.machine", return_value="x86_64"):
                 from claude_launcher import ClaudeInstaller
-                installer = ClaudeInstaller(MagicMock())
+                installer = ClaudeInstaller()
                 installer._latest_version = "2.1.42"
 
                 url = installer.get_download_url()
@@ -291,7 +293,7 @@ class TestWindowsExeExtension:
         with patch("sys.platform", "linux"):
             with patch("platform.machine", return_value="x86_64"):
                 from claude_launcher import ClaudeInstaller
-                installer = ClaudeInstaller(MagicMock())
+                installer = ClaudeInstaller()
                 installer._latest_version = "2.1.42"
 
                 url = installer.get_download_url()
@@ -330,7 +332,7 @@ class TestClaudeInstallerDownloadFile:
         with patch("sys.platform", "win32"):
             with patch("platform.machine", return_value="x86_64"):
                 from claude_launcher import ClaudeInstaller
-                installer = ClaudeInstaller(MagicMock())
+                installer = ClaudeInstaller()
                 installer._latest_version = "2.1.42"
 
                 url = installer.get_download_url()
@@ -341,7 +343,7 @@ class TestClaudeInstallerDownloadFile:
         with patch("sys.platform", "linux"):
             with patch("platform.machine", return_value="x86_64"):
                 from claude_launcher import ClaudeInstaller
-                installer = ClaudeInstaller(MagicMock())
+                installer = ClaudeInstaller()
                 installer._latest_version = "2.1.42"
 
                 url = installer.get_download_url()
@@ -353,12 +355,37 @@ class TestClaudeInstallerDownloadFile:
         with patch("sys.platform", "darwin"):
             with patch("platform.machine", return_value="arm64"):
                 from claude_launcher import ClaudeInstaller
-                installer = ClaudeInstaller(MagicMock())
+                installer = ClaudeInstaller()
                 installer._latest_version = "2.1.42"
 
                 url = installer.get_download_url()
                 assert url.endswith("/claude")
                 assert not url.endswith(".exe")
+
+
+class TestClaudeUninstaller:
+    """Tests for Claude uninstaller."""
+
+    def test_uninstaller_uses_correct_download_dir_windows(self):
+        """Verify uninstaller uses correct download dir on Windows."""
+        with patch("sys.platform", "win32"):
+            with patch.dict(os.environ, {"USERPROFILE": "/test/user"}):
+                from claude_launcher import get_download_dir
+                assert str(get_download_dir()) == "/test/user/.claude/downloads"
+
+    def test_uninstaller_uses_correct_download_dir_linux(self):
+        """Verify uninstaller uses correct download dir on Linux."""
+        with patch("sys.platform", "linux"):
+            with patch("pathlib.Path.home", return_value=Path("/test/home")):
+                from claude_launcher import get_download_dir
+                assert str(get_download_dir()) == "/test/home/.claude/downloads"
+
+    def test_uninstaller_uses_correct_download_dir_darwin(self):
+        """Verify uninstaller uses correct download dir on macOS."""
+        with patch("sys.platform", "darwin"):
+            with patch("pathlib.Path.home", return_value=Path("/test/home")):
+                from claude_launcher import get_download_dir
+                assert str(get_download_dir()) == "/test/home/.claude/downloads"
 
 
 class TestAutoDetectClaude:

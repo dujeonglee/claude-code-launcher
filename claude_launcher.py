@@ -403,6 +403,43 @@ class ConfigManager:
 # Download and Installation
 # ============================================================================
 
+
+def get_download_dir() -> Path:
+    """Get the download directory based on OS."""
+    if sys.platform == "win32":
+        return Path(os.environ.get("USERPROFILE", Path.home())) / ".claude" / "downloads"
+    else:
+        return Path.home() / ".claude" / "downloads"
+
+
+def get_platform_name() -> Optional[str]:
+    """Get the platform name for download."""
+    os_name, arch_name = OSChecker.get_download_info()
+    if not os_name or not arch_name:
+        return None
+    return os_name
+
+
+def get_binary_name_for_platform(platform_name: str) -> str:
+    """Get the binary filename for a platform."""
+    if platform_name.startswith("win32"):
+        return "claude.exe"
+    return "claude"
+
+
+def compute_sha256(file_path: Path) -> Optional[str]:
+    """Compute SHA256 hash of a file."""
+    import hashlib
+    try:
+        sha256_hash = hashlib.sha256()
+        with open(file_path, "rb") as f:
+            for chunk in iter(lambda: f.read(8192), b""):
+                sha256_hash.update(chunk)
+        return sha256_hash.hexdigest()
+    except Exception:
+        return None
+
+
 class ClaudeInstaller(QThread):
     """Background thread for downloading and installing Claude Code."""
 
@@ -410,11 +447,12 @@ class ClaudeInstaller(QThread):
     finished = Signal(bool, str)  # success, message
     error = Signal(str)  # error message
 
-    def __init__(self, download_dir: Path, parent=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self.download_dir = download_dir
+        self.download_dir = get_download_dir()
         self.cancelled = False
         self._latest_version = None
+        self._manifest = None
 
     def set_version(self, version: str):
         """Set the version to download."""
@@ -463,11 +501,81 @@ class ClaudeInstaller(QThread):
             self.error.emit(str(e))
             return False
 
+    def _fetch_latest_version(self) -> Optional[str]:
+        """Fetch the latest version from GCS bucket."""
+        try:
+            resp = requests.get(f"{CLAUDE_DOWNLOAD_BASE}/latest", timeout=10)
+            resp.raise_for_status()
+            return resp.text.strip()
+        except Exception as e:
+            self.error.emit(f"Failed to fetch latest version: {e}")
+            return None
+
+    def _fetch_manifest(self, version: str) -> Optional[Dict]:
+        """Fetch manifest.json for a given version."""
+        try:
+            resp = requests.get(f"{CLAUDE_DOWNLOAD_BASE}/{version}/manifest.json", timeout=10)
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            self.error.emit(f"Failed to fetch manifest: {e}")
+            return None
+
+    def _get_checksum(self, platform_name: str, manifest: Dict) -> Optional[str]:
+        """Get checksum for a platform from manifest."""
+        platforms = manifest.get("platforms", {})
+        platform_info = platforms.get(platform_name)
+        if platform_info:
+            return platform_info.get("checksum")
+        return None
+
+    def _verify_checksum(self, file_path: Path, expected_checksum: str) -> bool:
+        """Verify SHA256 checksum of a file."""
+        actual_checksum = compute_sha256(file_path)
+        if actual_checksum and actual_checksum.lower() == expected_checksum.lower():
+            return True
+        return False
+
+    def _run_claude_install(self, binary_path: Path) -> Tuple[bool, str]:
+        """Run claude install to set up launcher and shell integration."""
+        try:
+            self.progress.emit(0, "Setting up Claude Code...")
+            result = subprocess.run(
+                [str(binary_path), "install"],
+                capture_output=True,
+                text=True,
+                timeout=120
+            )
+            if result.returncode == 0:
+                return True, "Installation complete"
+            else:
+                return False, f"Install command failed: {result.stderr}"
+        except subprocess.TimeoutExpired:
+            return False, "Install command timed out"
+        except Exception as e:
+            return False, f"Install command error: {e}"
+
+    def _cleanup(self, binary_path: Path) -> None:
+        """Clean up downloaded binary."""
+        try:
+            if binary_path.exists():
+                binary_path.unlink()
+        except Exception:
+            pass
+
     def run(self):
         """Main download and install workflow."""
         if not self._latest_version:
             self.finished.emit(False, "No version specified")
             return
+
+        # Get platform info
+        platform_name, _ = OSChecker.get_download_info()
+        if not platform_name:
+            self.finished.emit(False, "Unsupported platform for automatic download")
+            return
+
+        binary_name = get_binary_name_for_platform(platform_name)
 
         # Create download directory
         try:
@@ -477,31 +585,137 @@ class ClaudeInstaller(QThread):
             self.finished.emit(False, str(e))
             return
 
-        # Get download URL
-        url = self.get_download_url()
-        if not url:
-            self.finished.emit(False, "Unsupported platform for automatic download")
+        # Step 1: Fetch manifest
+        self.progress.emit(0, "Fetching manifest...")
+        manifest = self._fetch_manifest(self._latest_version)
+        if not manifest:
+            self.finished.emit(False, "Failed to fetch manifest")
             return
 
-        # Determine output path for the binary
-        # The binary is downloaded directly without archive
-        binary_name = "claude.exe" if sys.platform == "win32" else "claude"
-        binary_path = self.download_dir / binary_name
+        # Step 2: Get checksum
+        checksum = self._get_checksum(platform_name, manifest)
+        if not checksum:
+            self.finished.emit(False, f"Platform {platform_name} not found in manifest")
+            return
 
-        # Download the binary directly
+        # Step 3: Build download URL and download binary
+        url = f"{CLAUDE_DOWNLOAD_BASE}/{self._latest_version}/{platform_name}/{binary_name}"
+        binary_path = self.download_dir / f"{binary_name}"
+
         if not self._download_file(url, binary_path):
             if not self.cancelled:
                 self.finished.emit(False, "Download failed")
             return
 
-        # Set executable permission on Unix-like systems
+        # Step 4: Verify checksum
+        self.progress.emit(80, "Verifying checksum...")
+        if not self._verify_checksum(binary_path, checksum):
+            self._cleanup(binary_path)
+            self.finished.emit(False, "Checksum verification failed")
+            return
+
+        # Step 5: Set executable permission on Unix-like systems
         if sys.platform != "win32":
             try:
                 binary_path.chmod(binary_path.stat().st_mode | stat.S_IXUSR)
             except Exception:
                 pass
 
-        self.finished.emit(True, str(binary_path))
+        # Step 6: Run claude install
+        success, message = self._run_claude_install(binary_path)
+
+        # Step 7: Cleanup
+        self._cleanup(binary_path)
+
+        if success:
+            self.finished.emit(True, "Claude Code installed successfully")
+        else:
+            self.finished.emit(False, message)
+
+
+class ClaudeUninstaller(QThread):
+    """Background thread for uninstalling Claude Code."""
+
+    progress = Signal(int, str)  # percentage, message
+    finished = Signal(bool, str)  # success, message
+    error = Signal(str)  # error message
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.download_dir = get_download_dir()
+        self.cancelled = False
+
+    def cancel(self):
+        """Cancel the uninstall."""
+        self.cancelled = True
+
+    def _find_claude_binary(self) -> Optional[Path]:
+        """Find any Claude binary in the download directory."""
+        if not self.download_dir.exists():
+            return None
+
+        for item in self.download_dir.iterdir():
+            if item.is_file() and item.name in ("claude", "claude.exe"):
+                return item
+
+        return None
+
+    def _run_claude_uninstall(self) -> Tuple[bool, str]:
+        """Run claude uninstall to clean up launcher and shell integration."""
+        try:
+            self.progress.emit(0, "Uninstalling Claude Code...")
+
+            # Try to find the binary first
+            binary_path = self._find_claude_binary()
+            if not binary_path:
+                # Binary not found, just clean up downloads directory
+                self._cleanup_downloads()
+                return True, "Uninstall complete"
+
+            result = subprocess.run(
+                [str(binary_path), "uninstall"],
+                capture_output=True,
+                text=True,
+                timeout=120
+            )
+
+            # Clean up downloads directory regardless of result
+            self._cleanup_downloads()
+
+            if result.returncode == 0:
+                return True, "Uninstall complete"
+            else:
+                return True, f"Uninstall complete (with warnings): {result.stderr}"
+        except subprocess.TimeoutExpired:
+            self._cleanup_downloads()
+            return True, "Uninstall complete (with timeout)"
+        except Exception as e:
+            self._cleanup_downloads()
+            return False, f"Uninstall error: {e}"
+
+    def _cleanup_downloads(self) -> None:
+        """Clean up the downloads directory."""
+        try:
+            if self.download_dir.exists():
+                for item in self.download_dir.iterdir():
+                    if item.is_file():
+                        item.unlink()
+                # Try to remove empty directory
+                try:
+                    self.download_dir.rmdir()
+                except OSError:
+                    pass
+        except Exception:
+            pass
+
+    def run(self):
+        """Main uninstall workflow."""
+        success, message = self._run_claude_uninstall()
+
+        if success:
+            self.finished.emit(True, message)
+        else:
+            self.finished.emit(False, message)
 
 
 # ============================================================================
@@ -852,14 +1066,21 @@ class ClaudeLauncherWindow(QMainWindow):
 
         # Action buttons
         btn_row = QHBoxLayout()
-        self.install_btn = QPushButton("Install / Update Claude")
+        self.install_btn = QPushButton("Install Claude")
         self.install_btn.clicked.connect(self._install_claude)
-        self.install_btn.setMinimumWidth(180)
+        self.install_btn.setMinimumWidth(140)
         btn_row.addWidget(self.install_btn)
-        self.check_update_btn = QPushButton("Check for Updates")
-        self.check_update_btn.clicked.connect(self._check_claude_update)
-        self.check_update_btn.setMinimumWidth(140)
-        btn_row.addWidget(self.check_update_btn)
+
+        self.update_btn = QPushButton("Update Claude")
+        self.update_btn.clicked.connect(self._update_claude)
+        self.update_btn.setMinimumWidth(140)
+        btn_row.addWidget(self.update_btn)
+
+        self.uninstall_btn = QPushButton("Uninstall Claude")
+        self.uninstall_btn.clicked.connect(self._uninstall_claude)
+        self.uninstall_btn.setMinimumWidth(140)
+        btn_row.addWidget(self.uninstall_btn)
+
         btn_row.addStretch()
         inst_lay.addLayout(btn_row)
 
@@ -1084,6 +1305,35 @@ class ClaudeLauncherWindow(QMainWindow):
 
     # --- Claude installation management ---
 
+    def _update_button_states(self, claude_path: str, result: Dict):
+        """Update button states based on Claude installation status."""
+        installed = result.get("installed") is not None
+
+        if installed:
+            # Claude is installed - show uninstall button, hide install button
+            self.install_btn.setVisible(False)
+            self.update_btn.setVisible(True)
+            self.uninstall_btn.setVisible(True)
+            if result.get("needs_update"):
+                # Update available
+                self.update_btn.setEnabled(True)
+                self.uninstall_btn.setEnabled(True)
+            else:
+                # Up to date
+                self.update_btn.setEnabled(False)
+                self.uninstall_btn.setEnabled(True)
+        else:
+            # Claude not installed - show install button
+            self.install_btn.setVisible(True)
+            self.update_btn.setVisible(False)
+            self.uninstall_btn.setVisible(False)
+            if result.get("status") == "update_available":
+                self.install_btn.setEnabled(True)
+            elif result.get("status") == "not_installed":
+                self.install_btn.setEnabled(True)
+            else:
+                self.install_btn.setEnabled(False)
+
     def _check_claude_update(self):
         """Check Claude version and update status."""
         claude_path = self.claude_path_edit.text().strip() or "claude"
@@ -1095,23 +1345,23 @@ class ClaudeLauncherWindow(QMainWindow):
 
         result = version_mgr.check_update_needed(claude_path)
 
+        # Update button states
+        self._update_button_states(claude_path, result)
+
         if result["status"] == "not_installed":
             self.claude_status_label.setText("Not installed")
             self.claude_status_label.setStyleSheet("color: #f38ba8;")
             self.install_version_label.setText("")
-            self.install_btn.setEnabled(True)
-            self.status_bar.showMessage("Claude Code not found. Click 'Install / Update Claude' to download.", 10000)
+            self.status_bar.showMessage("Claude Code not found. Click 'Install Claude' to download.", 10000)
         elif result["status"] == "version_check_failed":
             self.claude_status_label.setText("Found but version check failed")
             self.claude_status_label.setStyleSheet("color: #fab387;")
             self.install_version_label.setText(f"({result.get('status_message', '')})")
-            self.install_btn.setEnabled(True)
             self.status_bar.showMessage(f"Binary found but version check failed: {result.get('status_message', '')}", 10000)
         elif result["status"] == "latest_check_failed":
             self.claude_status_label.setText("Version check failed (can't fetch CHANGELOG)")
             self.claude_status_label.setStyleSheet("color: #fab387;")
             self.install_version_label.setText(f"(installed: v{result['installed']})")
-            self.install_btn.setEnabled(False)
             self.status_bar.showMessage("Could not fetch latest version from CHANGELOG", 10000)
         elif result["status"] == "checking":
             self.claude_status_label.setText("Unknown version / not found")
@@ -1121,19 +1371,16 @@ class ClaudeLauncherWindow(QMainWindow):
             self.claude_status_label.setText("Up to date")
             self.claude_status_label.setStyleSheet("color: #a6e3a1;")
             self.install_version_label.setText(f"(v{result['installed']})")
-            self.install_btn.setEnabled(False)
             self.status_bar.showMessage("Claude Code is up to date", 5000)
         elif result["status"] == "update_available":
             self.claude_status_label.setText("Update available")
             self.claude_status_label.setStyleSheet("color: #fab387;")
             self.install_version_label.setText(f"(installed: v{result['installed']}, latest: v{result['latest']})")
-            self.install_btn.setEnabled(True)
             self.status_bar.showMessage(f"Update available: v{result['latest']}", 10000)
         elif result["status"] == "install_outdated":
             self.claude_status_label.setText("Need to install")
             self.claude_status_label.setStyleSheet("color: #fab387;")
             self.install_version_label.setText(f"(latest: v{result['latest']})")
-            self.install_btn.setEnabled(True)
         else:
             self.claude_status_label.setText(result.get("status", "Unknown"))
             self.install_version_label.setText("")
@@ -1188,9 +1435,7 @@ class ClaudeLauncherWindow(QMainWindow):
 
     def _start_claude_download(self, version: str):
         """Start the download thread for Claude Code."""
-        # Create download directory
-        download_dir = DEFAULT_CONFIG_DIR / "claude-downloads"
-        self.installer = ClaudeInstaller(download_dir, self)
+        self.installer = ClaudeInstaller(self)
         self.installer.set_version(version)
 
         # Connect signals
@@ -1204,7 +1449,8 @@ class ClaudeLauncherWindow(QMainWindow):
         self.download_progress.setVisible(True)
         self.download_progress.setValue(0)
         self.install_btn.setEnabled(False)
-        self.check_update_btn.setEnabled(False)
+        self.update_btn.setEnabled(False)
+        self.uninstall_btn.setEnabled(False)
         self.status_bar.showMessage("Downloading Claude Code...")
 
         # Start thread
@@ -1235,17 +1481,148 @@ class ClaudeLauncherWindow(QMainWindow):
             QMessageBox.warning(self, "Installation Failed", message)
 
         self.install_btn.setEnabled(True)
-        self.check_update_btn.setEnabled(True)
+        self.update_btn.setEnabled(True)
+        self.uninstall_btn.setEnabled(True)
+        self._check_claude_update()  # Refresh status
 
-    def _on_install_error(self, error: str):
-        """Handle download error."""
+    def _update_claude(self):
+        """Update Claude Code to latest version."""
+        claude_path = self.claude_path_edit.text().strip() or "claude"
+        version_mgr = VersionManager()
+
+        # Get latest version
+        latest_version = version_mgr.get_latest_version()
+        if not latest_version:
+            QMessageBox.warning(
+                self, "Version Check Failed",
+                "Could not fetch latest version from CHANGELOG.\n"
+                "Please check your internet connection."
+            )
+            return
+
+        # Check if platform is supported
+        if not OSChecker.is_supported_platform():
+            os_name = OSChecker.get_os_platform()
+            QMessageBox.warning(
+                self, "Unsupported Platform",
+                f"Claude Code automatic installation is not supported on {os_name}.\n\n"
+                "Please manually install Claude Code using:\n"
+                "  npm install -g @anthropic-ai/claude-code"
+            )
+            return
+
+        # Get installed version
+        installed, _ = version_mgr.get_installed_version(claude_path)
+
+        # Confirm update
+        platform, _ = OSChecker.get_download_info()
+        binary_name = "claude.exe" if platform.startswith("win32") else "claude"
+        msg = f"Update Claude Code from v{installed} to v{latest_version}?\n\n"
+        msg += f"Platform: {platform}\n"
+        msg += f"Download URL: {CLAUDE_DOWNLOAD_BASE}/{latest_version}/{platform}/{binary_name}\n"
+        msg += "This will download approximately 20-30 MB."
+
+        reply = QMessageBox.question(
+            self, "Update Claude Code",
+            msg,
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        # Start download in background
+        self._start_claude_download(latest_version)
+
+    def _uninstall_claude(self):
+        """Uninstall Claude Code."""
+        claude_path = self.claude_path_edit.text().strip() or "claude"
+
+        # Check if binary exists
+        binary_path = shutil.which(claude_path)
+        if not binary_path:
+            p = Path(claude_path)
+            if not (p.exists() and p.is_file()):
+                QMessageBox.information(
+                    self, "Already Uninstalled",
+                    "Claude Code does not appear to be installed."
+                )
+                return
+
+        # Confirm uninstallation
+        reply = QMessageBox.question(
+            self, "Uninstall Claude Code",
+            "Are you sure you want to uninstall Claude Code?\n\n"
+            "This will remove the Claude Code CLI and all downloaded files.",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        # Start uninstall in background
+        self._start_claude_uninstall()
+
+    def _start_claude_uninstall(self):
+        """Start the uninstall thread for Claude Code."""
+        self.uninstaller = ClaudeUninstaller(self)
+
+        # Connect signals
+        self.uninstaller.progress.connect(self._on_uninstall_progress)
+        self.uninstaller.finished.connect(self._on_uninstall_finished)
+        self.uninstaller.error.connect(self._on_uninstall_error)
+
+        # Update UI
+        self.claude_status_label.setText("Uninstalling...")
+        self.claude_status_label.setStyleSheet("color: #f9e2af;")
+        self.download_progress.setVisible(True)
+        self.download_progress.setValue(0)
+        self.install_btn.setEnabled(False)
+        self.update_btn.setEnabled(False)
+        self.uninstall_btn.setEnabled(False)
+        self.status_bar.showMessage("Uninstalling Claude Code...")
+
+        # Start thread
+        self.uninstaller.start()
+
+    def _on_install_progress(self, percent: int, message: str):
+        """Handle download progress updates."""
+        self.download_progress.setValue(percent)
+        self.status_bar.showMessage(message)
+
+    def _on_uninstall_progress(self, percent: int, message: str):
+        """Handle uninstall progress updates."""
+        self.download_progress.setValue(percent)
+        self.status_bar.showMessage(message)
+
+    def _on_uninstall_finished(self, success: bool, message: str):
+        """Handle uninstall completion."""
         self.download_progress.setVisible(False)
-        self.claude_status_label.setText("Download error")
+
+        if success:
+            self.claude_status_label.setText("Uninstalled successfully")
+            self.claude_status_label.setStyleSheet("color: #a6e3a1;")
+            self.install_version_label.setText("")
+            self.claude_path_edit.setText("claude")
+            self.status_bar.showMessage(f"Claude Code uninstalled: {message}", 10000)
+            QMessageBox.information(self, "Uninstallation Complete", message)
+        else:
+            self.claude_status_label.setText("Uninstallation failed")
+            self.claude_status_label.setStyleSheet("color: #f38ba8;")
+            self.status_bar.showMessage(f"Uninstallation failed: {message}", 10000)
+            QMessageBox.warning(self, "Uninstallation Failed", message)
+
+        # Refresh button states
+        self._check_claude_update()
+
+    def _on_uninstall_error(self, error: str):
+        """Handle uninstall error."""
+        self.download_progress.setVisible(False)
+        self.claude_status_label.setText("Uninstall error")
         self.claude_status_label.setStyleSheet("color: #f38ba8;")
-        self.status_bar.showMessage(f"Download error: {error}", 10000)
+        self.status_bar.showMessage(f"Uninstall error: {error}", 10000)
         self.install_btn.setEnabled(True)
-        self.check_update_btn.setEnabled(True)
-        QMessageBox.critical(self, "Download Error", error)
+        self.update_btn.setEnabled(True)
+        self.uninstall_btn.setEnabled(True)
+        QMessageBox.critical(self, "Uninstall Error", error)
 
     def _browse_workdir(self):
         d = QFileDialog.getExistingDirectory(
