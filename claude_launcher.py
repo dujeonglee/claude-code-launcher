@@ -17,11 +17,11 @@ import stat
 import time
 import shutil
 import subprocess
-import json
+# json import removed - not used
 import re
 from pathlib import Path
 from typing import Optional, Dict, List, Any, Tuple
-from datetime import datetime
+# datetime import removed - datetime.datetime not used
 
 import yaml
 import requests
@@ -32,8 +32,8 @@ from PySide6.QtWidgets import (
     QStatusBar, QMessageBox, QFileDialog, QScrollArea, QPlainTextEdit,
     QSpinBox, QProgressBar,
 )
-from PySide6.QtCore import Qt, QTimer, QThread, Signal
-from PySide6.QtGui import QFont, QFontDatabase, QTextCursor
+from PySide6.QtCore import QTimer, QThread, Signal
+from PySide6.QtGui import QFont, QFontDatabase
 
 
 # ============================================================================
@@ -245,7 +245,7 @@ class VersionManager:
 
         changelog = self._fetch_changelog()
         if not changelog:
-            print(f'Failed to fetch CHANGELOG for version checking.')
+            print('Failed to fetch CHANGELOG for version checking.')
             return None
 
         # Parse version from CHANGELOG (look for version headers like ## 0.x.x or ## v0.x.x)
@@ -1389,7 +1389,6 @@ class ClaudeLauncherWindow(QMainWindow):
 
     def _install_claude(self):
         """Open installation dialog or start download."""
-        claude_path = self.claude_path_edit.text().strip() or "claude"
         version_mgr = VersionManager()
 
         # Get latest version

@@ -80,7 +80,7 @@ Handles OS and architecture detection for Claude Code downloads.
 
 #### Methods
 
-##### OSChecker.get_os_platform() -> str
+### OSChecker.get_os_platform() -> str
 Returns the OS platform name.
 
 Returns:
@@ -89,7 +89,7 @@ Returns:
 - `"windows"` for Windows
 - `"unknown"` otherwise
 
-##### OSChecker.get_architecture() -> str
+### OSChecker.get_architecture() -> str
 Returns the CPU architecture.
 
 Returns:
@@ -97,14 +97,14 @@ Returns:
 - `"arm64"` for ARM 64-bit
 - Original arch name otherwise
 
-##### OSChecker.get_download_info() -> Tuple[str, Optional[str]]
+### OSChecker.get_download_info() -> Tuple[str, Optional[str]]
 Returns (platform_name, arch_name) for download URL.
 
 Returns:
 - `(os_name, arch_identifier)` for supported platforms
 - `(None, None)` for unsupported platforms
 
-##### OSChecker.is_supported_platform() -> bool
+### OSChecker.is_supported_platform() -> bool
 Returns True if the current platform supports automatic Claude Code download.
 
 ---
@@ -115,7 +115,7 @@ Manages Claude Code version checking and fetching from CHANGELOG.
 
 #### Constructor
 
-##### VersionManager.__init__(timeout: int = 10)
+### VersionManager.__init__(timeout: int = 10)
 Initializes the version manager.
 
 Parameters:
@@ -123,14 +123,14 @@ Parameters:
 
 #### Methods
 
-##### VersionManager.get_latest_version() -> Optional[str]
+### VersionManager.get_latest_version() -> Optional[str]
 Fetches the latest stable version from the Claude Code CHANGELOG.
 
 Returns:
 - Version string (e.g., `"2.1.42"`) if successful
 - `None` if fetch or parsing fails
 
-##### VersionManager.get_installed_version(claude_path: str) -> Tuple[Optional[str], str]
+### VersionManager.get_installed_version(claude_path: str) -> Tuple[Optional[str], str]
 Gets the installed Claude version.
 
 Parameters:
@@ -141,7 +141,7 @@ Returns:
 - `version`: Parsed version string or `None`
 - `status_message`: Description of result
 
-##### VersionManager.check_update_needed(claude_path: str) -> Dict[str, Any]
+### VersionManager.check_update_needed(claude_path: str) -> Dict[str, Any]
 Checks if Claude needs update.
 
 Parameters:
@@ -167,7 +167,7 @@ Manages application configuration stored in YAML format.
 
 #### Constructor
 
-##### ConfigManager.__init__(config_path: Path = DEFAULT_CONFIG_FILE)
+### ConfigManager.__init__(config_path: Path = DEFAULT_CONFIG_FILE)
 Initializes the config manager.
 
 Parameters:
@@ -175,13 +175,13 @@ Parameters:
 
 #### Methods
 
-##### ConfigManager.load() -> Dict[str, Any]
+### ConfigManager.load() -> Dict[str, Any]
 Loads configuration from file, merging with defaults.
 
 Returns:
 - Combined configuration dictionary
 
-##### ConfigManager.save(config: Optional[Dict] = None) -> bool
+### ConfigManager.save(config: Optional[Dict] = None) -> bool
 Saves configuration to file.
 
 Parameters:
@@ -190,7 +190,7 @@ Parameters:
 Returns:
 - `True` if successful, `False` otherwise
 
-##### ConfigManager.exists() -> bool
+### ConfigManager.exists() -> bool
 Returns `True` if the configuration file exists.
 
 ---
@@ -201,7 +201,7 @@ Background thread for downloading and installing Claude Code.
 
 #### Constructor
 
-##### ClaudeInstaller.__init__(download_dir: Path, parent: Optional[QObject] = None)
+### ClaudeInstaller.__init__(download_dir: Path, parent: Optional[QObject] = None)
 Initializes the installer.
 
 Parameters:
@@ -210,13 +210,13 @@ Parameters:
 
 #### Methods
 
-##### ClaudeInstaller.set_version(version: str)
+### ClaudeInstaller.set_version(version: str)
 Sets the version to download.
 
-##### ClaudeInstaller.cancel()
+### ClaudeInstaller.cancel()
 Cancels the ongoing download.
 
-##### ClaudeInstaller.get_download_url() -> Optional[str]
+### ClaudeInstaller.get_download_url() -> Optional[str]
 Builds the download URL for the current platform.
 
 Returns:
@@ -236,7 +236,7 @@ Provides server health checks and model listing.
 
 #### Methods
 
-##### ServerProbe.validate_url(base_url: str, runtime: str, timeout: float = 5.0) -> Dict
+### ServerProbe.validate_url(base_url: str, runtime: str, timeout: float = 5.0) -> Dict
 Checks server health endpoint.
 
 Parameters:
@@ -253,7 +253,7 @@ Returns:
 }
 ```
 
-##### ServerProbe.fetch_models(base_url: str, runtime: str, timeout: float = 10.0) -> List[str]
+### ServerProbe.fetch_models(base_url: str, runtime: str, timeout: float = 10.0) -> List[str]
 Fetches available models from server.
 
 Parameters:
@@ -272,7 +272,7 @@ Generates bash launch scripts from configuration.
 
 #### Methods
 
-##### ScriptGenerator.generate(config: Dict) -> str
+### ScriptGenerator.generate(config: Dict) -> str
 Generates a bash script from configuration.
 
 Parameters:
@@ -281,7 +281,7 @@ Parameters:
 Returns:
 - Bash script content as string
 
-##### ScriptGenerator.save_script(script_content: str, path: Path) -> bool
+### ScriptGenerator.save_script(script_content: str, path: Path) -> bool
 Saves script to file and makes it executable.
 
 Parameters:
@@ -291,7 +291,7 @@ Parameters:
 Returns:
 - `True` if successful
 
-##### ScriptGenerator.launch_in_terminal(script_path: Path)
+### ScriptGenerator.launch_in_terminal(script_path: Path)
 Launches the script in a new terminal window.
 
 Parameters:
@@ -310,12 +310,12 @@ Main GUI application window.
 
 #### Constructor
 
-##### ClaudeLauncherWindow.__init__()
+### ClaudeLauncherWindow.__init__()
 Creates the main window and initializes all UI components.
 
 #### Public Methods
 
-##### ClaudeLauncherWindow._lets_roll()
+### ClaudeLauncherWindow._lets_roll()
 Collects configuration, generates launch script, and launches Claude Code in a new terminal.
 
 This is the primary user-facing action that launches Claude with the configured settings.
