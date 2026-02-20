@@ -1,450 +1,807 @@
 #!/usr/bin/env python3
 """
-Claude Code Launcher - Cross-platform TUI application for managing Claude Code
-installation and environment variables.
+Claude Code Launcher
+
+A Python application that:
+1. Checks if Claude is installed, and installs it if not
+2. Updates Claude
+3. Manages settings.local.json configuration
+4. Provides an interactive TUI for configuring environment variables for LLM runtime
+5. Launches Claude in a new window
+
+Supports: Windows, WSL, Linux, macOS
 """
 
-import os
-import sys
 import json
-import platform
-import subprocess
+import os
 import shutil
+import subprocess
+import sys
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Any, Optional
-import argparse
-import curses
-from curses import wrapper
-import getpass
+from typing import Any
 
-# Environment variable definitions
-ENV_VARS = {
-    "ANTHROPIC_API_KEY": "Anthropic API 키 (X-Api-Key 헤더로 전송)",
-    "ANTHROPIC_AUTH_TOKEN": "Authorization: Bearer 헤더에 사용할 커스텀 값",
-    "ANTHROPIC_CUSTOM_HEADERS": "요청에 추가할 커스텀 헤더 (Name: Value 형식)",
-    "CLAUDE_CODE_CLIENT_CERT": "mTLS 인증용 클라이언트 인증서 파일 경로",
-    "CLAUDE_CODE_CLIENT_KEY": "mTLS 인증용 클라이언트 개인 키 파일 경로",
-    "CLAUDE_CODE_CLIENT_KEY_PASSPHRASE": "암호화된 클라이언트 키의 패스프레이즈",
-    "ANTHROPIC_MODEL": "사용할 모델 이름 지정",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "Sonnet 모델 별칭 오버라이드",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "Opus 모델 별칭 오버라이드",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "Haiku 모델 별칭 오버라이드",
-    "CLAUDE_CODE_SUBAGENT_MODEL": "서브에이전트에서 사용할 모델",
-    "ANTHROPIC_SMALL_FAST_MODEL": "*(Deprecated)* 백그라운드 작업용 Haiku 클래스 모델",
-    "ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION": "Bedrock에서 Haiku 모델의 AWS 리전 오버라이드",
-    "MAX_THINKING_TOKENS": "Extended thinking 활성화 및 토큰 예산 설정",
-    "CLAUDE_CODE_USE_BEDROCK": "AWS Bedrock 사용",
-    "CLAUDE_CODE_USE_VERTEX": "Google Vertex AI 사용",
-    "CLAUDE_CODE_USE_FOUNDRY": "Microsoft Foundry 사용",
-    "AWS_BEARER_TOKEN_BEDROCK": "Bedrock API 키 인증",
-    "ANTHROPIC_FOUNDRY_API_KEY": "Microsoft Foundry 인증 API 키",
-    "CLAUDE_CODE_SKIP_BEDROCK_AUTH": "Bedrock AWS 인증 스킵 (LLM 게이트웨이 사용 시)",
-    "CLAUDE_CODE_SKIP_VERTEX_AUTH": "Vertex Google 인증 스킵",
-    "CLAUDE_CODE_SKIP_FOUNDRY_AUTH": "Foundry Azure 인증 스킵",
-    "VERTEX_REGION_CLAUDE_3_5_HAIKU": "Vertex AI에서 Claude 3.5 Haiku 리전 오버라이드",
-    "VERTEX_REGION_CLAUDE_3_7_SONNET": "Vertex AI에서 Claude 3.7 Sonnet 리전 오버라이드",
-    "VERTEX_REGION_CLAUDE_4_0_SONNET": "Vertex AI에서 Claude 4.0 Sonnet 리전 오버라이드",
-    "VERTEX_REGION_CLAUDE_4_0_OPUS": "Vertex AI에서 Claude 4.0 Opus 리전 오버라이드",
-    "VERTEX_REGION_CLAUDE_4_1_OPUS": "Vertex AI에서 Claude 4.1 Opus 리전 오버라이드",
-    "BASH_DEFAULT_TIMEOUT_MS": "장시간 실행 Bash 명령의 기본 타임아웃",
-    "BASH_MAX_TIMEOUT_MS": "모델이 설정할 수 있는 최대 타임아웃",
-    "BASH_MAX_OUTPUT_LENGTH": "Bash 출력 최대 문자 수 (초과 시 중간 잘림)",
-    "CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR": "각 Bash 명령 후 프로젝트 루트 디렉토리로 복귀",
-    "CLAUDE_ENV_FILE": "Bash 명령 실행 전 소싱할 환경 설정 쉘 스크립트 경로",
-    "CLAUDE_CODE_SHELL_PREFIX": "모든 Bash 명령에 붙일 접두 명령 (로깅/감사용)",
-    "MCP_TIMEOUT": "MCP 서버 시작 타임아웃 (ms)",
-    "MCP_TOOL_TIMEOUT": "MCP 툴 실행 타임아웃 (ms)",
-    "MAX_MCP_OUTPUT_TOKENS": "MCP 툴 응답 최대 토큰 수 (기본: 25,000)",
-    "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "대부분의 요청에 대한 최대 출력 토큰 수",
-    "DISABLE_COST_WARNINGS": "`1`로 설정 시 비용 경고 메시지 비활성화",
-    "DISABLE_PROMPT_CACHING": "`1`로 설정 시 모든 모델 프롬프트 캐싱 비활성화",
-    "DISABLE_PROMPT_CACHING_SONNET": "Sonnet 모델 프롬프트 캐싱 비활성화",
-    "DISABLE_PROMPT_CACHING_OPUS": "Opus 모델 프롬프트 캐싱 비활성화",
-    "DISABLE_PROMPT_CACHING_HAIKU": "Haiku 모델 프롬프트 캐싱 비활성화",
-    "SLASH_COMMAND_TOOL_CHAR_BUDGET": "슬래시 커맨드 메타데이터 최대 문자 수 (기본: 15,000)",
-    "DISABLE_TELEMETRY": "`1`로 설정 시 Statsig 텔레메트리 비활성화",
-    "DISABLE_ERROR_REPORTING": "`1`로 설정 시 Sentry 오류 보고 비활성화",
-    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "`DISABLE_AUTOUPDATER` + `DISABLE_BUG_COMMAND` + `DISABLE_ERROR_REPORTING` + `DISABLE_TELEMETRY` 일괄 설정",
-    "CLAUDE_CODE_ENABLE_TELEMETRY": "`1`로 설정 시 OpenTelemetry 활성화",
-    "CLAUDE_CONFIG_DIR": "Claude Code 설정 및 데이터 파일 저장 경로 커스텀",
-    "DISABLE_AUTOUPDATER": "`1`로 설정 시 자동 업데이트 비활성화",
-    "DISABLE_BUG_COMMAND": "`1`로 설정 시 `/bug` 명령 비활성화",
-    "DISABLE_NON_ESSENTIAL_MODEL_CALLS": "`1`로 설정 시 flavor text 등 비필수 모델 호출 비활성화",
-    "CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "`1`로 설정 시 대화 내용 기반 터미널 제목 자동 업데이트 비활성화",
-    "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "`1`로 설정 시 `anthropic-beta` 헤더 비활성화 (LLM 게이트웨이 연동 시 유용)",
-    "CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL": "IDE 확장 자동 설치 스킵",
-    "CLAUDE_CODE_API_KEY_HELPER_TTL_MS": "`apiKeyHelper` 사용 시 자격 증명 갱신 주기 (ms)",
-    "USE_BUILTIN_RIPGREP": "`0`으로 설정 시 내장 `rg` 대신 시스템 `rg` 사용",
-    "HTTP_PROXY": "HTTP 프록시 서버 지정",
-    "HTTPS_PROXY": "HTTPS 프록시 서버 지정",
-    "NO_PROXY": "프록시 우회할 도메인/IP 목록"
+import typer
+from rich.console import Console
+from rich.panel import Panel
+from rich.prompt import Confirm, Prompt
+from rich.table import Table
+from rich.text import Text
+
+# Initialize console for rich output
+console = Console()
+
+# ============================================================================
+# Constants and Configuration
+# ============================================================================
+
+# LLM Runtime configurations
+LLM_RUNTIME_OLLAMA = "ollama"
+LLM_RUNTIME_VLLM = "vllm"
+LLM_RUNTIME_MLX = "mlx"
+
+# Default ports for each runtime
+DEFAULT_PORTS = {
+    LLM_RUNTIME_OLLAMA: 11434,
+    LLM_RUNTIME_VLLM: 8000,
+    LLM_RUNTIME_MLX: 8080,
 }
 
-class ClaudeLauncher:
-    """Main Claude Code launcher class."""
+# Environment variable defaults for each runtime
+# Note: URLs should not include /v1 suffix - it will be added by the application when making API calls
+RUNTIME_ENV_DEFAULTS = {
+    LLM_RUNTIME_OLLAMA: {
+        "ANTHROPIC_BASE_URL": "http://localhost:11434",
+        "ANTHROPIC_AUTH_TOKEN": "",
+        "ANTHROPIC_API_KEY": "not-needed",
+    },
+    LLM_RUNTIME_VLLM: {
+        "ANTHROPIC_BASE_URL": "http://localhost:8000/v1",
+        "ANTHROPIC_AUTH_TOKEN": "",
+        "ANTHROPIC_API_KEY": "not-needed",
+    },
+    LLM_RUNTIME_MLX: {
+        "ANTHROPIC_BASE_URL": "http://localhost:8080/v1",
+        "ANTHROPIC_AUTH_TOKEN": "",
+        "ANTHROPIC_API_KEY": "not-needed",
+    },
+}
 
-    def __init__(self):
-        self.settings_dir = Path.home() / ".claude"
-        self.settings_file = self.settings_dir / "settings.json"
-        self.settings = self._load_settings()
+# Claude configuration paths
+CLAUDE_CONFIG_DIR = ".claude"
+SETTINGS_LOCAL_JSON = "settings.local.json"
 
-    def _load_settings(self) -> Dict[str, Any]:
-        """Load settings from JSON file."""
-        if self.settings_file.exists():
+# Supported platforms
+PLATFORM_WINDOWS = "windows"
+PLATFORM_DARWIN = "darwin"
+PLATFORM_LINUX = "linux"
+PLATFORM_WSL = "wsl"
+
+
+# ============================================================================
+# Platform Detection
+# ============================================================================
+
+def get_platform() -> str:
+    """Detect the current platform (Windows, Darwin, Linux, or WSL)."""
+    if sys.platform == "win32":
+        return PLATFORM_WINDOWS
+    elif sys.platform == "darwin":
+        return PLATFORM_DARWIN
+    elif "microsoft" in sys.version.lower() or os.path.exists("/proc/version"):
+        # Check for WSL
+        try:
+            with open("/proc/version", "r") as f:
+                content = f.read().lower()
+                if "microsoft" in content:
+                    return PLATFORM_WSL
+        except Exception:
+            pass
+        return PLATFORM_LINUX
+    return PLATFORM_LINUX
+
+
+def get_platform_name() -> str:
+    """Get a user-friendly platform name."""
+    platform = get_platform()
+    platform_names = {
+        PLATFORM_WINDOWS: "Windows",
+        PLATFORM_DARWIN: "macOS",
+        PLATFORM_LINUX: "Linux",
+        PLATFORM_WSL: "WSL",
+    }
+    return platform_names.get(platform, "Unknown")
+
+
+# ============================================================================
+# Installation Scripts
+# ============================================================================
+
+def get_script_path(script_name: str) -> Path:
+    """Get the full path to an installation script."""
+    script_dir = Path(__file__).parent
+    return script_dir / script_name
+
+
+def check_claude_installed() -> bool:
+    """Check if Claude is installed and available in PATH."""
+    try:
+        result = subprocess.run(
+            ["claude", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        return result.returncode == 0
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return False
+
+
+def run_install_script() -> bool:
+    """Run the OS-specific installation script."""
+    platform = get_platform()
+    script_name = ""
+
+    if platform == PLATFORM_WINDOWS:
+        # Try PowerShell first, then CMD
+        ps_script = get_script_path("install.ps1")
+        if ps_script.exists():
             try:
-                with open(self.settings_file, 'r') as f:
-                    return json.load(f)
-            except (json.JSONDecodeError, IOError):
-                return {"env": {}}
-        else:
-            # Create settings directory if it doesn't exist
-            self.settings_dir.mkdir(exist_ok=True)
-            return {"env": {}}
+                result = subprocess.run(
+                    ["powershell", "-ExecutionPolicy", "Bypass", "-File", str(ps_script)],
+                    check=True,
+                    capture_output=True,
+                    text=True
+                )
+                console.print(Panel.fit("[green]Installation completed successfully[/green]"))
+                return True
+            except subprocess.CalledProcessError as e:
+                console.print(Panel.fit(f"[yellow]PowerShell installation failed: {e}[/yellow]"))
+                # Fall back to CMD
+        cmd_script = get_script_path("install.cmd")
+        if cmd_script.exists():
+            try:
+                result = subprocess.run(
+                    ["cmd", "/c", str(cmd_script)],
+                    check=True,
+                    capture_output=True,
+                    text=True
+                )
+                console.print(Panel.fit("[green]Installation completed successfully[/green]"))
+                return True
+            except subprocess.CalledProcessError as e:
+                console.print(Panel.fit(f"[red]CMD installation also failed: {e}[/red]"))
+                return False
+        return False
+    else:
+        # Unix-like systems (Linux, macOS, WSL)
+        sh_script = get_script_path("install.sh")
+        if sh_script.exists():
+            try:
+                result = subprocess.run(
+                    ["bash", str(sh_script)],
+                    check=True,
+                    capture_output=True,
+                    text=True
+                )
+                console.print(Panel.fit("[green]Installation completed successfully[/green]"))
+                return True
+            except subprocess.CalledProcessError as e:
+                console.print(Panel.fit(f"[red]Installation failed: {e}[/red]"))
+                return False
+        return False
 
-    def _save_settings(self) -> None:
-        """Save settings to JSON file."""
+
+def update_claude() -> bool:
+    """Update Claude to the latest version."""
+    try:
+        result = subprocess.run(
+            ["claude", "update"],
+            check=True,
+            capture_output=True,
+            text=True
+        )
+        console.print(Panel.fit("[green]Claude updated successfully[/green]"))
+        console.print(result.stdout)
+        return True
+    except subprocess.CalledProcessError as e:
+        console.print(Panel.fit(f"[red]Failed to update Claude: {e}[/red]"))
+        console.print(e.stderr)
+        return False
+
+
+# ============================================================================
+# Settings Management
+# ============================================================================
+
+def get_settings_paths() -> list[Path]:
+    """Get all possible settings file paths (OS-specific)."""
+    cwd = Path.cwd()
+    if get_platform() == PLATFORM_WINDOWS:
+        return [
+            cwd / CLAUDE_CONFIG_DIR / SETTINGS_LOCAL_JSON,
+            cwd / ".claude" / SETTINGS_LOCAL_JSON,
+        ]
+    else:
+        return [
+            cwd / CLAUDE_CONFIG_DIR / SETTINGS_LOCAL_JSON,
+            cwd / ".claude" / SETTINGS_LOCAL_JSON,
+        ]
+
+
+def find_or_create_settings() -> Path:
+    """Find existing settings file or create a new one."""
+    paths = get_settings_paths()
+    for path in paths:
+        if path.exists():
+            return path
+
+    # Create the .claude directory if it doesn't exist
+    config_dir = paths[0].parent
+    config_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create empty settings file
+    with open(paths[0], "w") as f:
+        json.dump({"env": {}}, f, indent=2)
+
+    return paths[0]
+
+
+def load_settings(path: Path | None = None) -> dict[str, Any]:
+    """Load settings from file."""
+    if path is None:
+        path = find_or_create_settings()
+
+    try:
+        with open(path, "r") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, FileNotFoundError) as e:
+        console.print(Panel.fit(f"[yellow]Warning: Could not load settings: {e}[/yellow]"))
+        return {"env": {}}
+
+
+def save_settings(data: dict[str, Any], path: Path | None = None) -> bool:
+    """Save settings to file."""
+    if path is None:
+        path = find_or_create_settings()
+
+    try:
+        with open(path, "w") as f:
+            json.dump(data, f, indent=2)
+        return True
+    except Exception as e:
+        console.print(Panel.fit(f"[red]Failed to save settings: {e}[/red]"))
+        return False
+
+
+# ============================================================================
+# LLM Runtime and Model Management
+# ============================================================================
+
+@dataclass
+class AvailableModel:
+    """Represents an available LLM model."""
+    name: str
+    provider: str
+
+
+class LLMRuntimeManager:
+    """Manages LLM runtime configuration and model fetching."""
+
+    def __init__(self, runtime: str, base_url: str, api_key: str | None = None):
+        self.runtime = runtime
+        # Strip trailing slashes from base URL
+        self.base_url = base_url.rstrip("/")
+        self.api_key = api_key or ""
+
+    def _make_request(self, endpoint: str) -> dict | list | None:
+        """Make HTTP request to LLM runtime API."""
+        import urllib.request
+        import urllib.error
+
+        url = f"{self.base_url}{endpoint}"
+        headers = {}
+
+        if self.api_key and self.api_key != "not-needed":
+            headers["Authorization"] = f"Bearer {self.api_key}"
+
         try:
-            with open(self.settings_file, 'w') as f:
-                json.dump(self.settings, f, indent=2)
-        except IOError as e:
-            raise Exception(f"Failed to save settings: {e}")
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=10) as response:
+                return json.loads(response.read().decode())
+        except urllib.error.HTTPError as e:
+            console.print(Panel.fit(f"[yellow]Warning: HTTP Error {e.code} connecting to {self.runtime}: {e}[/yellow]"))
+            return None
+        except urllib.error.URLError as e:
+            console.print(Panel.fit(f"[yellow]Warning: Could not connect to {self.runtime}: {e}[/yellow]"))
+            return None
+        except json.JSONDecodeError as e:
+            console.print(Panel.fit(f"[yellow]Warning: Could not parse response from {self.runtime}: {e}[/yellow]"))
+            return None
 
-    def install_claude(self) -> None:
-        """Install Claude Code using the recommended native installation method."""
-        print("Installing Claude Code...")
-        try:
-            # Use the recommended native installation method from https://code.claude.com/docs/en/setup
-            if platform.system() == "Windows":
-                # Windows installation using PowerShell
-                if shutil.which("powershell") is not None:
-                    # Use PowerShell with explicit command execution to avoid injection
-                    subprocess.run(["powershell", "-ExecutionPolicy", "Bypass", "-Command", "irm https://claude.ai/install.ps1 | iex"], check=True)
-                else:
-                    # Fallback to CMD if PowerShell is not available
-                    # Use direct download and execution without shell injection
-                    subprocess.run(["cmd", "/c", "curl -fsSL https://claude.ai/install.cmd -o install.cmd && install.cmd && del install.cmd"], check=True)
-            elif platform.system() in ["Linux", "Darwin"]:
-                # Linux/macOS installation using curl bash script
-                # Use shell=False for better security
-                subprocess.run(["bash", "-c", "curl -fsSL https://claude.ai/install.sh | bash"], check=True, shell=False)
-            else:
-                raise Exception("Unsupported platform")
-            print("Claude Code installed successfully!")
-        except subprocess.CalledProcessError as e:
-            raise Exception(f"Installation failed: {e}")
+    def fetch_models(self) -> list[AvailableModel]:
+        """Fetch available models from the LLM runtime."""
+        models: list[AvailableModel] = []
 
-    def uninstall_claude(self) -> None:
-        """Uninstall Claude Code using the recommended uninstallation method."""
-        print("Uninstalling Claude Code...")
-        try:
-            # Use the recommended uninstallation method from https://code.claude.com/docs/en/setup
-            if platform.system() == "Windows":
-                # Windows uninstallation - remove the binary and version files
-                # Manual removal approach as specified in official documentation
-                print("Running Windows uninstall commands...")
-                subprocess.run(["powershell", "-Command", "Remove-Item -Path \"$env:USERPROFILE\\.local\\bin\\claude.exe\" -Force; Remove-Item -Path \"$env:USERPROFILE\\.local\\share\\claude\" -Recurse -Force"], check=True)
-            elif platform.system() in ["Linux", "Darwin"]:
-                # Linux/macOS uninstallation - remove the binary and version files
-                # Manual removal approach as specified in official documentation
-                print("Running Linux/macOS uninstall commands...")
-                # Use os.path.expanduser to properly expand the home directory
-                local_bin = os.path.expanduser("~/.local/bin/claude")
-                local_share = os.path.expanduser("~/.local/share/claude")
-                print(f"Removing files from: {local_bin} and {local_share}")
-                subprocess.run(["rm", "-f", local_bin], check=True)
-                subprocess.run(["rm", "-rf", local_share], check=True)
-            else:
-                raise Exception("Unsupported platform")
-            print("Claude Code uninstalled successfully!")
-        except subprocess.CalledProcessError as e:
-            print(f"Uninstallation failed with subprocess error: {e}")
-            raise Exception(f"Uninstallation failed: {e}")
-        except Exception as e:
-            print(f"Unexpected error during uninstall: {e}")
-            raise
+        if self.runtime == LLM_RUNTIME_OLLAMA:
+            # Ollama API: GET /api/tags
+            # Response: {"models": [{"name": "model-name"}, ...]}
+            result = self._make_request("/api/tags")
+            if result and "models" in result:
+                for model in result["models"]:
+                    name = model.get("name", "")
+                    if name:
+                        models.append(AvailableModel(name=name, provider="ollama"))
 
-    def get_env_var(self, var_name: str) -> Optional[str]:
-        """Get environment variable value."""
-        return self.settings.get("env", {}).get(var_name)
+        elif self.runtime == LLM_RUNTIME_VLLM:
+            # vLLM API: GET /v1/models (OpenAI-compatible)
+            # Response: {"object": "list", "data": [{"id": "model-id", ...}]}
+            result = self._make_request("/v1/models")
+            if result and "data" in result:
+                for model in result["data"]:
+                    name = model.get("id", "")
+                    if name:
+                        models.append(AvailableModel(name=name, provider="vllm"))
 
-    def set_env_var(self, var_name: str, value: str) -> None:
-        """Set environment variable value."""
-        if "env" not in self.settings:
-            self.settings["env"] = {}
-        self.settings["env"][var_name] = value
-        self._save_settings()
+        elif self.runtime == LLM_RUNTIME_MLX:
+            # mlx LM API: GET /v1/models (OpenAI-compatible)
+            # Response: {"object": "list", "data": [{"id": "model-id", ...}]}
+            result = self._make_request("/v1/models")
+            if result and "data" in result:
+                for model in result["data"]:
+                    name = model.get("id", "")
+                    if name:
+                        models.append(AvailableModel(name=name, provider="mlx"))
 
-    def list_env_vars(self) -> Dict[str, str]:
-        """List all environment variables."""
-        return self.settings.get("env", {})
+        return models
 
-    def get_system_info(self) -> Dict[str, str]:
-        """Get system information."""
-        return {
-            "platform": platform.system(),
-            "python_version": platform.python_version(),
-            "architecture": platform.machine()
-        }
 
-def create_tui():
-    """Create the TUI interface."""
-    def main(stdscr):
-        # Clear screen
-        stdscr.clear()
+# ============================================================================
+# Interactive Selection using Rich (proper terminal rendering)
+# ============================================================================
 
-        # Initialize colors if available
-        if curses.has_colors():
-            curses.start_color()
-            curses.init_pair(1, curses.COLOR_WHITE, curses.COLOR_BLACK)
-            curses.init_pair(2, curses.COLOR_GREEN, curses.COLOR_BLACK)
-            curses.init_pair(3, curses.COLOR_RED, curses.COLOR_BLACK)
-            curses.init_pair(4, curses.COLOR_YELLOW, curses.COLOR_BLACK)
+def select_option(options: list[str], prompt: str = "Select an option:") -> str:
+    """Select an option from a list using arrow keys.
 
-        # Display main menu
-        while True:
-            stdscr.clear()
-            height, width = stdscr.getmaxyx()
+    Uses rich's console rendering for proper alignment and terminal handling.
+    """
+    from rich.prompt import Prompt
 
-            # Header
-            stdscr.addstr(0, 0, "Claude Code Launcher", curses.A_BOLD)
-            if width > 0:
-                stdscr.addstr(1, 0, "=" * min(width, 80))  # Limit line length to prevent overflow
+    # For interactive selection with arrow keys, we use a simple prompt-based approach
+    # since rich doesn't have a built-in interactive list selector with arrow keys
+    # in the prompt module. We'll use a numbered list approach.
 
-            # Menu options
-            menu_options = [
-                "1. Install Claude Code",
-                "2. Uninstall Claude Code",
-                "3. Set Environment Variables",
-                "4. List Environment Variables",
-                "5. System Information",
-                "6. Exit"
+    console.print(prompt)
+    for i, option in enumerate(options, 1):
+        console.print(f"  [bold]{i}[/bold]. {option}")
+
+    console.print()
+
+    while True:
+        response = Prompt.ask(
+            "Enter choice (number)",
+            choices=[str(i) for i in range(1, len(options) + 1)],
+            show_choices=True
+        )
+        return options[int(response) - 1]
+
+
+def confirm(prompt: str = "Continue?") -> bool:
+    """Confirm an action with yes/no."""
+    return Confirm.ask(prompt)
+
+
+# ============================================================================
+# Environment Variable Configuration
+# ============================================================================
+
+def configure_env_vars(current_env: dict[str, str] | None = None) -> dict[str, str]:
+    """Configure environment variables for LLM runtime."""
+    if current_env is None:
+        current_env = {}
+
+    env = current_env.copy()
+
+    # 1. Select LLM Runtime
+    console.print(Panel.fit("[bold]LLM Runtime Configuration[/bold]"))
+    console.print()
+
+    runtime_options = [LLM_RUNTIME_OLLAMA, LLM_RUNTIME_VLLM, LLM_RUNTIME_MLX]
+    runtime = select_option(
+        runtime_options,
+        prompt="Select LLM Runtime Server:"
+    )
+
+    # 2. Get base URL
+    default_port = DEFAULT_PORTS.get(runtime, 8000)
+    default_url = RUNTIME_ENV_DEFAULTS.get(runtime, {}).get("ANTHROPIC_BASE_URL", f"http://your-llm-runtime:{default_port}")
+
+    base_url = Prompt.ask(
+        "Enter ANTHROPIC_BASE_URL",
+        default=default_url
+    )
+
+    env["ANTHROPIC_BASE_URL"] = base_url
+
+    # 3. Get auth token (optional)
+    auth_token = Prompt.ask(
+        "Enter ANTHROPIC_AUTH_TOKEN (press Enter to skip)",
+        default="",
+        show_default=False
+    )
+    if auth_token:
+        env["ANTHROPIC_AUTH_TOKEN"] = auth_token
+    elif "ANTHROPIC_AUTH_TOKEN" in env:
+        del env["ANTHROPIC_AUTH_TOKEN"]
+
+    # 4. Get API key (optional)
+    api_key = Prompt.ask(
+        "Enter ANTHROPIC_API_KEY (press Enter to skip)",
+        default="",
+        show_default=False
+    )
+    if api_key:
+        env["ANTHROPIC_API_KEY"] = api_key
+    elif "ANTHROPIC_API_KEY" in env:
+        del env["ANTHROPIC_API_KEY"]
+
+    # 5. Fetch and select models
+    console.print()
+    console.print(Panel.fit("[bold]Model Selection[/bold]"))
+    console.print("Fetching available models...")
+
+    manager = LLMRuntimeManager(
+        runtime=runtime,
+        base_url=base_url,
+        api_key=api_key if api_key else None
+    )
+
+    models = manager.fetch_models()
+
+    if models:
+        console.print(Panel.fit(f"Found [green]{len(models)}[/green] models"))
+
+        # Display models in a table
+        table = Table(title="Available Models")
+        table.add_column("Name", style="cyan")
+        table.add_column("Provider", style="magenta")
+
+        for model in models:
+            table.add_row(model.name, model.provider)
+
+        console.print(table)
+
+        # Create model selector using numbered list
+        model_names = [m.name for m in models]
+        opus_model = select_option(
+            model_names,
+            prompt="Select ANTHROPIC_DEFAULT_OPUS_MODEL:"
+        )
+        env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = opus_model
+
+        sonnet_model = select_option(
+            model_names,
+            prompt="Select ANTHROPIC_DEFAULT_SONNET_MODEL:"
+        )
+        env["ANTHROPIC_DEFAULT_SONNET_MODEL"] = sonnet_model
+
+        haiku_model = select_option(
+            model_names,
+            prompt="Select ANTHROPIC_DEFAULT_HAIKU_MODEL:"
+        )
+        env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = haiku_model
+    else:
+        console.print(Panel.fit("[yellow]No models found. You can configure models manually.[/yellow]"))
+        for model_type in ["OPUS", "SONNET", "HAIKU"]:
+            model_name = Prompt.ask(f"Enter ANTHROPIC_DEFAULT_{model_type}_MODEL")
+            env[f"ANTHROPIC_DEFAULT_{model_type}_MODEL"] = model_name
+
+    # 6. Set Claude disable traffic flag
+    env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
+
+    # 7. Ask to review and confirm
+    console.print()
+    console.print(Panel.fit("[bold]Configuration Summary[/bold]"))
+    config_table = Table(title="Environment Variables")
+    config_table.add_column("Variable", style="cyan")
+    config_table.add_column("Value", style="green")
+
+    for key, value in sorted(env.items()):
+        if key.startswith("ANTHROPIC_") or key == "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC":
+            display_value = value if not key.endswith("_TOKEN") and not key.endswith("_KEY") else "***"
+            config_table.add_row(key, display_value)
+
+    console.print(config_table)
+
+    if not confirm("Save this configuration?"):
+        console.print("[yellow]Configuration cancelled.[/yellow]")
+        return current_env
+
+    return env
+
+
+# ============================================================================
+# Claude Launch
+# ============================================================================
+
+def launch_claude() -> bool:
+    """Launch Claude in a new window."""
+    platform = get_platform()
+
+    try:
+        cwd = Path.cwd()
+        claude_cmd = "claude.exe" if platform == PLATFORM_WINDOWS else "claude"
+        if platform == PLATFORM_WINDOWS:
+            # On Windows, use 'start' to launch in new window, cd to current directory
+            subprocess.Popen(
+                ["start", "cmd", "/k", f"cd /d \"{cwd}\" && {claude_cmd}"],
+                shell=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+        elif platform == PLATFORM_DARWIN:
+            # On macOS, use osascript to open a new Terminal tab/window and cd to cwd
+            script = f'tell app "Terminal" to do script "cd \\"{cwd}\\" && claude"'
+            subprocess.Popen(
+                ["osascript", "-e", script],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+        elif platform == PLATFORM_LINUX or platform == PLATFORM_WSL:
+            # On Linux/WSL, try to find a terminal emulator with working directory
+            # Note: WSL uses Linux binaries, not .exe
+            terminals = [
+                ["gnome-terminal", "--", "bash", "-c", f"cd '{cwd}' && claude; exec bash"],
+                ["konsole", "--workdir", str(cwd), "-e", "bash", "-c", "claude; exec bash"],
+                ["xterm", "-e", "bash", "-c", f"cd '{cwd}' && claude; exec bash"],
+                ["alacritty", "-e", "bash", "-c", f"cd '{cwd}' && claude; exec bash"],
+                ["terminator", "-e", "bash", "-c", f"cd '{cwd}' && claude; exec bash"],
             ]
 
-            # Ensure we don't write beyond screen boundaries
-            max_menu_lines = min(len(menu_options), height - 5)  # Leave space for header and prompt
-            for i in range(max_menu_lines):
-                if i + 3 < height:  # Ensure we don't exceed screen height
-                    stdscr.addstr(i + 3, 5, menu_options[i])
-
-            if height > 1:
-                stdscr.addstr(height - 1, 0, "Select an option (1-6): ")
-            stdscr.refresh()
-
-            # Get user input
-            key = stdscr.getch()
-
-            if key == ord('1'):
-                handle_install(stdscr)
-            elif key == ord('2'):
-                handle_uninstall(stdscr)
-            elif key == ord('3'):
-                handle_set_env_vars(stdscr)
-            elif key == ord('4'):
-                handle_list_env_vars(stdscr)
-            elif key == ord('5'):
-                handle_system_info(stdscr)
-            elif key == ord('6'):
-                break
-            else:
-                if height > 2:
-                    stdscr.addstr(height - 2, 0, "Invalid option. Press any key to continue...")
-                stdscr.refresh()
-                stdscr.getch()
-
-    def handle_install(stdscr):
-        stdscr.clear()
-        stdscr.addstr(0, 0, "Installing Claude Code...")
-        stdscr.refresh()
-
-        try:
-            launcher = ClaudeLauncher()
-            launcher.install_claude()
-            stdscr.addstr(2, 0, "Installation completed successfully!")
-        except Exception as e:
-            stdscr.addstr(2, 0, f"Installation failed: {e}")
-
-        stdscr.addstr(4, 0, "Press any key to continue...")
-        stdscr.refresh()
-        stdscr.getch()
-
-    def handle_uninstall(stdscr):
-        stdscr.clear()
-        stdscr.addstr(0, 0, "Uninstalling Claude Code...")
-        stdscr.refresh()
-
-        try:
-            launcher = ClaudeLauncher()
-            print("Debug: About to call uninstall_claude from TUI")
-            launcher.uninstall_claude()
-            stdscr.addstr(2, 0, "Uninstallation completed successfully!")
-            print("Debug: Uninstall completed successfully")
-        except Exception as e:
-            stdscr.addstr(2, 0, f"Uninstallation failed: {e}")
-            print(f"Debug: Uninstall failed with error: {e}")
-
-        stdscr.addstr(4, 0, "Press any key to continue...")
-        stdscr.refresh()
-        stdscr.getch()
-
-    def handle_set_env_vars(stdscr):
-        stdscr.clear()
-        stdscr.addstr(0, 0, "Set Environment Variables")
-        stdscr.addstr(1, 0, "=" * 40)
-
-        # Display all environment variables
-        env_vars = list(ENV_VARS.keys())
-        current_selection = 0
-        scroll_offset = 0
-
-        while True:
-            stdscr.clear()
-            stdscr.addstr(0, 0, "Set Environment Variables")
-            stdscr.addstr(1, 0, "=" * 40)
-
-            # Get screen dimensions
-            height, width = stdscr.getmaxyx()
-
-            # Calculate how many variables we can display
-            max_display_lines = height - 8  # Leave space for instructions and header
-
-            # Adjust scroll offset if needed
-            if current_selection < scroll_offset:
-                scroll_offset = current_selection
-            if current_selection >= scroll_offset + max_display_lines:
-                scroll_offset = current_selection - max_display_lines + 1
-
-            # Display variables within scroll bounds
-            for i, var_name in enumerate(env_vars[scroll_offset:scroll_offset + max_display_lines]):
-                display_index = i + 3
-                if display_index >= height - 2:  # Prevent writing beyond screen
+            launched = False
+            for term in terminals:
+                try:
+                    subprocess.Popen(
+                        term,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        start_new_session=True
+                    )
+                    launched = True
                     break
+                except (FileNotFoundError, OSError):
+                    continue
 
-                if i + scroll_offset == current_selection:
-                    stdscr.addstr(display_index, 2, f"> {var_name}", curses.A_REVERSE)
-                else:
-                    stdscr.addstr(display_index, 2, f"  {var_name}")
-
-            stdscr.addstr(height - 2, 0, "Use arrow keys to navigate, Enter to set value, ESC to return")
-            stdscr.refresh()
-
-            key = stdscr.getch()
-
-            if key == curses.KEY_UP:
-                current_selection = max(0, current_selection - 1)
-            elif key == curses.KEY_DOWN:
-                current_selection = min(len(env_vars) - 1, current_selection + 1)
-            elif key == 10:  # Enter key
-                # Get the current value
-                var_name = env_vars[current_selection]
-                current_value = ClaudeLauncher().get_env_var(var_name) or ""
-
-                # Get new value from user
-                stdscr.clear()
-                stdscr.addstr(0, 0, f"Set value for {var_name}:")
-                stdscr.addstr(2, 0, f"Current value: {current_value}")
-                stdscr.addstr(4, 0, "Enter new value (or press Enter to keep current): ")
-                stdscr.refresh()
-
-                # Get input
-                curses.echo()
-                new_value = stdscr.getstr(5, 0, 100).decode('utf-8')
-                curses.noecho()
-
-                if new_value != "":
-                    launcher = ClaudeLauncher()
-                    launcher.set_env_var(var_name, new_value)
-                    stdscr.addstr(7, 0, f"Value for {var_name} set to: {new_value}")
-                else:
-                    stdscr.addstr(7, 0, "Value unchanged.")
-
-                stdscr.addstr(9, 0, "Press any key to continue...")
-                stdscr.refresh()
-                stdscr.getch()
-            elif key == 27:  # ESC key
-                break
-
-    def handle_list_env_vars(stdscr):
-        stdscr.clear()
-        stdscr.addstr(0, 0, "Environment Variables")
-        stdscr.addstr(1, 0, "=" * 40)
-
-        launcher = ClaudeLauncher()
-        env_vars = launcher.list_env_vars()
-
-        if not env_vars:
-            stdscr.addstr(3, 0, "No environment variables set.")
+            if not launched:
+                # Fallback: just run in background
+                subprocess.Popen(
+                    ["claude"],
+                    cwd=str(cwd),
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True
+                )
         else:
-            for i, (var_name, var_value) in enumerate(env_vars.items()):
-                stdscr.addstr(i + 3, 0, f"{var_name}: {var_value}")
+            # Generic fallback
+            subprocess.Popen(
+                ["claude"],
+                cwd=str(cwd),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True
+            )
 
-        stdscr.addstr(len(env_vars) + 5, 0, "Press any key to continue...")
-        stdscr.refresh()
-        stdscr.getch()
+        console.print(Panel.fit("[green]Claude is launching in a new window...[/green]"))
+        console.print("[dim]This launcher will now exit.[/dim]")
+        return True
 
-    def handle_system_info(stdscr):
-        stdscr.clear()
-        stdscr.addstr(0, 0, "System Information")
-        stdscr.addstr(1, 0, "=" * 40)
+    except Exception as e:
+        console.print(Panel.fit(f"[red]Failed to launch Claude: {e}[/red]"))
+        return False
 
-        launcher = ClaudeLauncher()
-        info = launcher.get_system_info()
 
-        stdscr.addstr(3, 0, f"Platform: {info['platform']}")
-        stdscr.addstr(4, 0, f"Python Version: {info['python_version']}")
-        stdscr.addstr(5, 0, f"Architecture: {info['architecture']}")
+# ============================================================================
+# Main Application
+# ============================================================================
 
-        stdscr.addstr(8, 0, "Press any key to continue...")
-        stdscr.refresh()
-        stdscr.getch()
+def main() -> None:
+    """Main entry point for the Claude Code Launcher."""
+    console.print(Panel.fit(
+        "[bold cyan]Claude Code Launcher[/bold cyan]\n"
+        f"Platform: [bold]{get_platform_name()}[/bold]",
+        subtitle="v1.0.0"
+    ))
+    console.print()
 
-    wrapper(main)
+    # Step 1: Check if Claude is installed
+    console.print("[bold]Step 1: Checking Claude installation...[/bold]")
+    if not check_claude_installed():
+        console.print(Panel.fit(
+            "[yellow]Claude is not installed. Running installation...[/yellow]"
+        ))
 
-def main():
-    """Main entry point."""
-    parser = argparse.ArgumentParser(description='Claude Code Launcher')
-    parser.add_argument('--tui', action='store_true', help='Run in TUI mode')
-    parser.add_argument('--install', action='store_true', help='Install Claude Code')
-    parser.add_argument('--uninstall', action='store_true', help='Uninstall Claude Code')
-    parser.add_argument('--set-env', nargs=2, metavar=('VAR', 'VALUE'),
-                       help='Set environment variable')
-    parser.add_argument('--list-env', action='store_true', help='List environment variables')
-
-    args = parser.parse_args()
-
-    launcher = ClaudeLauncher()
-
-    print(f"Debug: Arguments received - tui:{args.tui}, install:{args.install}, uninstall:{args.uninstall}, set_env:{args.set_env}, list_env:{args.list_env}")
-    print(f"Debug: Platform detected - {platform.system()}")
-
-    if args.tui:
-        print("Starting TUI mode...")
-        create_tui()
-    elif args.install:
-        print("Starting installation...")
-        try:
-            launcher.install_claude()
-        except Exception as e:
-            print(f"Error: {e}")
-            sys.exit(1)
-    elif args.uninstall:
-        print("Starting uninstallation...")
-        try:
-            launcher.uninstall_claude()
-        except Exception as e:
-            print(f"Error: {e}")
-            sys.exit(1)
-    elif args.set_env:
-        var_name, value = args.set_env
-        launcher.set_env_var(var_name, value)
-        print(f"Set {var_name} to {value}")
-    elif args.list_env:
-        env_vars = launcher.list_env_vars()
-        for var_name, var_value in env_vars.items():
-            print(f"{var_name}: {var_value}")
+        # Step 2: Run installation
+        console.print("[bold]Step 2: Installing Claude...[/bold]")
+        if not run_install_script():
+            console.print(Panel.fit(
+                "[red]Installation failed. Please install Claude manually and try again.[/red]"
+            ))
+            raise typer.Exit(code=1)
     else:
-        print("Starting TUI mode (default)...")
-        # Default to TUI mode
-        create_tui()
+        console.print(Panel.fit("[green]Claude is already installed.[/green]"))
+
+    # Step 3: Update Claude
+    console.print()
+    console.print("[bold]Step 3: Updating Claude...[/bold]")
+    if not update_claude():
+        if not confirm("Continue anyway?"):
+            raise typer.Exit(code=1)
+
+    # Step 4: Find or create settings
+    console.print()
+    console.print("[bold]Step 4: Managing settings...[/bold]")
+    settings_path = find_or_create_settings()
+    console.print(f"[dim]Settings file: {settings_path}[/dim]")
+
+    # Step 5 & 6: Load and configure environment variables
+    console.print()
+    console.print("[bold]Step 5-6: Configuring environment variables...[/bold]")
+
+    settings = load_settings(settings_path)
+    current_env = settings.get("env", {})
+
+    if not current_env:
+        console.print("[dim]No environment configuration found. Starting configuration...[/dim]")
+        new_env = configure_env_vars({})
+    else:
+        console.print("[dim]Found existing environment configuration.[/dim]")
+        if confirm("Would you like to modify the configuration?"):
+            new_env = configure_env_vars(current_env)
+        else:
+            new_env = current_env
+
+    # Save settings
+    settings["env"] = new_env
+    if not save_settings(settings, settings_path):
+        console.print(Panel.fit("[red]Failed to save settings.[/red]"))
+        raise typer.Exit(code=1)
+
+    console.print(Panel.fit("[green]Configuration saved successfully![/green]"))
+
+    # Step 7: Launch Claude
+    console.print()
+    console.print("[bold]Step 7: Launching Claude...[/bold]")
+    if launch_claude():
+        console.print()
+        console.print("[dim]Thank you for using Claude Code Launcher![/dim]")
+        raise typer.Exit(code=0)
+    else:
+        console.print(Panel.fit("[red]Launch failed![/red]"))
+        raise typer.Exit(code=1)
+
+
+app = typer.Typer(
+    name="claude-launcher",
+    help="Claude Code Launcher - Install, update, configure, and launch Claude Code",
+    add_completion=False,
+)
+
+
+@app.command()
+def install() -> None:
+    """Run the installation script."""
+    console.print(Panel.fit("[bold]Installing Claude Code[/bold]"))
+    if run_install_script():
+        console.print("[green]Installation completed![/green]")
+    else:
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def update() -> None:
+    """Update Claude to the latest version."""
+    console.print(Panel.fit("[bold]Updating Claude Code[/bold]"))
+    if update_claude():
+        console.print("[green]Update completed![/green]")
+    else:
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def configure() -> None:
+    """Configure environment variables for LLM runtime."""
+    console.print(Panel.fit("[bold]Configure Claude Environment[/bold]"))
+
+    settings_path = find_or_create_settings()
+    settings = load_settings(settings_path)
+
+    current_env = settings.get("env", {})
+    new_env = configure_env_vars(current_env)
+
+    settings["env"] = new_env
+    if save_settings(settings, settings_path):
+        console.print("[green]Configuration saved![/green]")
+    else:
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def launch() -> None:
+    """Launch Claude in a new window."""
+    console.print(Panel.fit("[bold]Launch Claude Code[/bold]"))
+
+    if check_claude_installed():
+        launch_claude()
+    else:
+        console.print(Panel.fit(
+            "[yellow]Claude is not installed. Please run 'install' first.[/yellow]"
+        ))
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def info() -> None:
+    """Display system and installation information."""
+    platform = get_platform()
+    platform_name = get_platform_name()
+    is_installed = check_claude_installed()
+
+    table = Table(title="System Information")
+    table.add_column("Property", style="cyan")
+    table.add_column("Value", style="green")
+
+    table.add_row("Platform", platform_name)
+    table.add_row("Platform ID", platform)
+    table.add_row("Python Version", sys.version.split()[0])
+    table.add_row("Claude Installed", "Yes" if is_installed else "No")
+
+    if is_installed:
+        try:
+            result = subprocess.run(
+                ["claude", "--version"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            table.add_row("Claude Version", result.stdout.strip())
+        except Exception:
+            table.add_row("Claude Version", "Unknown")
+
+    console.print(table)
+
+
+@app.command()
+def test_models(
+    runtime: str = typer.Option(LLM_RUNTIME_OLLAMA, "--runtime", "-r", help="LLM runtime to test"),
+    base_url: str = typer.Option(None, "--url", "-u", help="Base URL for the LLM runtime"),
+) -> None:
+    """Test connection to an LLM runtime and list available models."""
+    console.print(Panel.fit(f"[bold]Testing {runtime} Connection[/bold]"))
+
+    if base_url is None:
+        default_port = DEFAULT_PORTS.get(runtime, 8000)
+        base_url = f"http://localhost:{default_port}"
+
+    console.print(f"[dim]Base URL: {base_url}[/dim]")
+
+    manager = LLMRuntimeManager(runtime=runtime, base_url=base_url)
+    models = manager.fetch_models()
+
+    if models:
+        table = Table(title=f"Found {len(models)} models")
+        table.add_column("Name", style="cyan")
+        table.add_column("Provider", style="magenta")
+
+        for model in models[:20]:  # Limit to first 20
+            table.add_row(model.name, model.provider)
+
+        if len(models) > 20:
+            table.add_row(f"... and {len(models) - 20} more", "")
+
+        console.print(table)
+    else:
+        console.print(Panel.fit("[yellow]No models found or unable to connect.[/yellow]"))
+
 
 if __name__ == "__main__":
     main()

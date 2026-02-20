@@ -1,0 +1,17 @@
+[project]
+name = "claude-launcher"
+version = "1.0.0"
+description = "Claude Code Launcher - Install, update, configure, and launch Claude Code"
+readme = "REQUIREMENT.md"
+requires-python = ">=3.9"
+dependencies = [
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+]
+
+[project.scripts]
+claude-launcher = "claude_launcher:app"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
