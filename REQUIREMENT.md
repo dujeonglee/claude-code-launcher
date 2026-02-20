@@ -1,71 +1,25 @@
 ## Claude Code 런처 개발
 # 요구사항
-1. Python app 으로 개발 할것.
-2. Windows, Linux, MAC OS 를 지원 할것
-3. TUI 를 지원 하여 사용자가 사용하기 편리 하도록 할것.
-4. 기본적으로 설치 및 삭제 기능을 지원 하고 자세한 내용은 https://code.claude.com/docs/en/setup 을 참고 할 것.
-5. 여러 환경 변수를 설정 할 수 있도록 할것
-Claude Code 환경 변수 전체 목록
-| 변수 | 설명 |
-|------|------|
-| `ANTHROPIC_API_KEY` | Anthropic API 키 (`X-Api-Key` 헤더로 전송) |
-| `ANTHROPIC_AUTH_TOKEN` | `Authorization: Bearer` 헤더에 사용할 커스텀 값 |
-| `ANTHROPIC_CUSTOM_HEADERS` | 요청에 추가할 커스텀 헤더 (`Name: Value` 형식) |
-| `CLAUDE_CODE_CLIENT_CERT` | mTLS 인증용 클라이언트 인증서 파일 경로 |
-| `CLAUDE_CODE_CLIENT_KEY` | mTLS 인증용 클라이언트 개인 키 파일 경로 |
-| `CLAUDE_CODE_CLIENT_KEY_PASSPHRASE` | 암호화된 클라이언트 키의 패스프레이즈 |
-| `ANTHROPIC_MODEL` | 사용할 모델 이름 지정 |
-| `ANTHROPIC_DEFAULT_SONNET_MODEL` | Sonnet 모델 별칭 오버라이드 |
-| `ANTHROPIC_DEFAULT_OPUS_MODEL` | Opus 모델 별칭 오버라이드 |
-| `ANTHROPIC_DEFAULT_HAIKU_MODEL` | Haiku 모델 별칭 오버라이드 |
-| `CLAUDE_CODE_SUBAGENT_MODEL` | 서브에이전트에서 사용할 모델 |
-| `ANTHROPIC_SMALL_FAST_MODEL` | *(Deprecated)* 백그라운드 작업용 Haiku 클래스 모델 |
-| `ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION` | Bedrock에서 Haiku 모델의 AWS 리전 오버라이드 |
-| `MAX_THINKING_TOKENS` | Extended thinking 활성화 및 토큰 예산 설정 |
-| `CLAUDE_CODE_USE_BEDROCK` | AWS Bedrock 사용 |
-| `CLAUDE_CODE_USE_VERTEX` | Google Vertex AI 사용 |
-| `CLAUDE_CODE_USE_FOUNDRY` | Microsoft Foundry 사용 |
-| `AWS_BEARER_TOKEN_BEDROCK` | Bedrock API 키 인증 |
-| `ANTHROPIC_FOUNDRY_API_KEY` | Microsoft Foundry 인증 API 키 |
-| `CLAUDE_CODE_SKIP_BEDROCK_AUTH` | Bedrock AWS 인증 스킵 (LLM 게이트웨이 사용 시) |
-| `CLAUDE_CODE_SKIP_VERTEX_AUTH` | Vertex Google 인증 스킵 |
-| `CLAUDE_CODE_SKIP_FOUNDRY_AUTH` | Foundry Azure 인증 스킵 |
-| `VERTEX_REGION_CLAUDE_3_5_HAIKU` | Vertex AI에서 Claude 3.5 Haiku 리전 오버라이드 |
-| `VERTEX_REGION_CLAUDE_3_7_SONNET` | Vertex AI에서 Claude 3.7 Sonnet 리전 오버라이드 |
-| `VERTEX_REGION_CLAUDE_4_0_SONNET` | Vertex AI에서 Claude 4.0 Sonnet 리전 오버라이드 |
-| `VERTEX_REGION_CLAUDE_4_0_OPUS` | Vertex AI에서 Claude 4.0 Opus 리전 오버라이드 |
-| `VERTEX_REGION_CLAUDE_4_1_OPUS` | Vertex AI에서 Claude 4.1 Opus 리전 오버라이드 |
-| `BASH_DEFAULT_TIMEOUT_MS` | 장시간 실행 Bash 명령의 기본 타임아웃 |
-| `BASH_MAX_TIMEOUT_MS` | 모델이 설정할 수 있는 최대 타임아웃 |
-| `BASH_MAX_OUTPUT_LENGTH` | Bash 출력 최대 문자 수 (초과 시 중간 잘림) |
-| `CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR` | 각 Bash 명령 후 프로젝트 루트 디렉토리로 복귀 |
-| `CLAUDE_ENV_FILE` | Bash 명령 실행 전 소싱할 환경 설정 쉘 스크립트 경로 |
-| `CLAUDE_CODE_SHELL_PREFIX` | 모든 Bash 명령에 붙일 접두 명령 (로깅/감사용) |
-| `MCP_TIMEOUT` | MCP 서버 시작 타임아웃 (ms) |
-| `MCP_TOOL_TIMEOUT` | MCP 툴 실행 타임아웃 (ms) |
-| `MAX_MCP_OUTPUT_TOKENS` | MCP 툴 응답 최대 토큰 수 (기본: 25,000) |
-| `CLAUDE_CODE_MAX_OUTPUT_TOKENS` | 대부분의 요청에 대한 최대 출력 토큰 수 |
-| `DISABLE_COST_WARNINGS` | `1`로 설정 시 비용 경고 메시지 비활성화 |
-| `DISABLE_PROMPT_CACHING` | `1`로 설정 시 모든 모델 프롬프트 캐싱 비활성화 |
-| `DISABLE_PROMPT_CACHING_SONNET` | Sonnet 모델 프롬프트 캐싱 비활성화 |
-| `DISABLE_PROMPT_CACHING_OPUS` | Opus 모델 프롬프트 캐싱 비활성화 |
-| `DISABLE_PROMPT_CACHING_HAIKU` | Haiku 모델 프롬프트 캐싱 비활성화 |
-| `SLASH_COMMAND_TOOL_CHAR_BUDGET` | 슬래시 커맨드 메타데이터 최대 문자 수 (기본: 15,000) |
-| `DISABLE_TELEMETRY` | `1`로 설정 시 Statsig 텔레메트리 비활성화 |
-| `DISABLE_ERROR_REPORTING` | `1`로 설정 시 Sentry 오류 보고 비활성화 |
-| `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` | `DISABLE_AUTOUPDATER` + `DISABLE_BUG_COMMAND` + `DISABLE_ERROR_REPORTING` + `DISABLE_TELEMETRY` 일괄 설정 |
-| `CLAUDE_CODE_ENABLE_TELEMETRY` | `1`로 설정 시 OpenTelemetry 활성화 |
-| `CLAUDE_CONFIG_DIR` | Claude Code 설정 및 데이터 파일 저장 경로 커스텀 |
-| `DISABLE_AUTOUPDATER` | `1`로 설정 시 자동 업데이트 비활성화 |
-| `DISABLE_BUG_COMMAND` | `1`로 설정 시 `/bug` 명령 비활성화 |
-| `DISABLE_NON_ESSENTIAL_MODEL_CALLS` | `1`로 설정 시 flavor text 등 비필수 모델 호출 비활성화 |
-| `CLAUDE_CODE_DISABLE_TERMINAL_TITLE` | `1`로 설정 시 대화 내용 기반 터미널 제목 자동 업데이트 비활성화 |
-| `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS` | `1`로 설정 시 `anthropic-beta` 헤더 비활성화 (LLM 게이트웨이 연동 시 유용) |
-| `CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL` | IDE 확장 자동 설치 스킵 |
-| `CLAUDE_CODE_API_KEY_HELPER_TTL_MS` | `apiKeyHelper` 사용 시 자격 증명 갱신 주기 (ms) |
-| `USE_BUILTIN_RIPGREP` | `0`으로 설정 시 내장 `rg` 대신 시스템 `rg` 사용 |
-| `HTTP_PROXY` | HTTP 프록시 서버 지정 |
-| `HTTPS_PROXY` | HTTPS 프록시 서버 지정 |
-| `NO_PROXY` | 프록시 우회할 도메인/IP 목록 |
-6. 환경변수는 별도로 만들지 말고, workingspace HOME 디렉토리의 `.claude/settings.json`의 `env` 필드에 넣어 관리 할 것.
-7. 기타 궁금한것이 있으면 임의로 판단하지 말고 물어볼것.
+1. 파이선 앱 으로 개발 할것.
+2. 윈도우, WSL, 리눅스, 맥 OS 를 지원 할것
+3. Typer 파이선 라이브러리를 사용할 것.
+4. 앱이 실행 되면 다음을 순서대로 수행 할것.
+    - Step1: claude 가 설치 되어 있는지 확인. 설치 되어 있지 않다면 Step2로 설치 되어 있다면 Step3으로 진행.
+    - Step2: OS에 따라 설치 스크립트를 shell에서 실행. 윈도우를 제외한 환경에 대해서는 install.sh를 실행하고, 윈도우에 대해서는 install.ps1 을 파워쉘에서 수행 하고 실패 할 경우 Windows CMD에서 install.cmd 를 수행. Step3 으로 진행.
+    - Step3: claude(.exe) update 를 쉘에서 실행해서 업데이트. Step4로 진행.
+    - Step4: 현재 디렉토리 기준에서 .claude/settings.local.json, .claude\settings.local.json, .claude\settings.local.json 을 찾아보고 없으면 해당 위치에 빈 파일을 생성. Step5로 진행.
+    - Step5: settings.local.json 파일을 읽고 "env" 항목을 불러 온다. "env"가 없으면 Step6으로 진행. "env"가 있으면 Step7으로 진행
+    - Step6: "env"에 환경 변수 값을 설정 한다.
+             - "LLM_RUNTIME_SERVER": {ollama, vllm, mlx} 값을 설정 할 수 있다. Radio 버튼과 같이 화살표키를 이용해서 3개 중 하나를 고를 수 있도록 하자. (추후에 다른 LLM Runtime지원이 추가 될 수 있으니 이부분 유념하여 확장성 있도록 작성 할 것.)
+             - "ANTHROPIC_BASE_URL": "http://localhost:{port}" {port}는 위 LLM Runtime의 기본 포트로 설정을 하고, 사용자가 url / 포트 번호를 수정할 수 있도록 하자.
+             - "ANTHROPIC_AUTH_TOKEN": LLM_RUNTIME_SERVER 타입에 따라서 필요한 경우에 대해서만 설정 할 수 있도록 하자.
+             - "ANTHROPIC_API_KEY": LLM_RUNTIME_SERVER 타입에 따라서 필요한 경우에 대해서만 설정 할 수 있도록 하자.
+             - "ANTHROPIC_DEFAULT_OPUS_MODEL": LLM_RUNTIME_SERVER 으로부터 가용한 모델을 불러와서 화살표 키를 이용해서 선택 할 수 있도록 하자. ollama, vllm, mlx 마다 API가 다르니 유의 하자.
+             - "ANTHROPIC_DEFAULT_SONNET_MODEL": LLM_RUNTIME_SERVER 으로부터 가용한 모델을 불러와서 화살표 키를 이용해서 선택 할 수 있도록 하자. ollama, vllm, mlx 마다 API가 다르니 유의 하자.
+             - "ANTHROPIC_DEFAULT_HAIKU_MODEL": LLM_RUNTIME_SERVER 으로부터 가용한 모델을 불러와서 화살표 키를 이용해서 선택 할 수 있도록 하자. ollama, vllm, mlx 마다 API가 다르니 유의 하자.
+             - "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1" 로 하자.
+             - 이 외에 환경변수가 나중에 추가 될 수 있으니 유연성 있도록 작성 할 것.
+             설정이 다 되면 Step8로 진행.
+    - Step7: "env"에 환경 변수 값을 로드하고, 수정할지 물어 본다. (y/n). y면 Step6으로 진행. n면 Step8로 진행.
+    - Step8: 새창을 열어서 현재 디랙토리와 동일 위치에서 claude(.exe)를 실행하고 본 프로그램을 종료 한다. 사용자는 새창에서 claude code를 이용해서 작업을 수행 하게 된다.
+5. 명확하지 않은 부분이 있다면 반드시 나에게 문의 할것.
