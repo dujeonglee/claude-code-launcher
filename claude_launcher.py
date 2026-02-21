@@ -413,7 +413,7 @@ def select_option(options: list[str], prompt: str = "Select an option:") -> str:
 
     while True:
         response = Prompt.ask(
-            "Enter choice (number)",
+            prompt,
             choices=[str(i) for i in range(1, len(options) + 1)],
             show_choices=True
         )
@@ -685,10 +685,7 @@ def main() -> None:
 
     # Launch Claude in current terminal
     console.print("[bold]Launching Claude...[/bold]")
-    if launch_claude():
-        console.print()
-        console.print("[dim]Thank you for using Claude Code Launcher![/dim]")
-    else:
+    if not launch_claude():
         text = Text.from_markup("[red]Launch failed![/red]")
         console.print(create_panel(text))
         raise typer.Exit(code=1)
