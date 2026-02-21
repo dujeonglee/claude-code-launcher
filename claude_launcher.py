@@ -665,6 +665,14 @@ def claude_code_settings_table_panel() -> Panel:
 # Main Application
 # ============================================================================
 
+app = typer.Typer(
+    name="claude-launcher",
+    help="Claude Code Launcher - Install, update, configure, and launch Claude Code in current terminal",
+    add_completion=False,
+)
+
+
+@app.command()
 def main() -> None:
     """Main entry point for the Claude Code Launcher."""
     console.print(claude_code_launcher_info_panel())
@@ -688,12 +696,5 @@ def main() -> None:
         raise typer.Exit(code=1)
 
 
-app = typer.Typer(
-    name="claude-launcher",
-    help="Claude Code Launcher - Install, update, configure, and launch Claude Code in current terminal",
-    add_completion=False,
-)
-
-
 if __name__ == "__main__":
-    main()
+    app()
