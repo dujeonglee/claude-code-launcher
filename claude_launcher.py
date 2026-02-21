@@ -555,9 +555,6 @@ def launch_claude() -> bool:
             env=env,
         )
 
-        text = Text.from_markup("[green]Claude is now running in this terminal.[/green]")
-        console.print(create_panel(text))
-        console.print("[dim]This launcher will now exit to avoid interfering with Claude's input/output.[/dim]")
         return result.returncode == 0
 
     except FileNotFoundError:
