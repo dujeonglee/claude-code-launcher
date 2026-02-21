@@ -7,9 +7,12 @@ A Python application that:
 2. Updates Claude
 3. Manages settings.local.json configuration
 4. Provides an interactive TUI for configuring environment variables for LLM runtime
-5. Launches Claude in a new window
+5. Launches Claude in the current terminal process
 
 Supports: Windows, WSL, Linux, macOS
+
+Note: Claude runs in the current process (not a new terminal), making it work seamlessly
+in SSH sessions, local terminals, and other interactive environments.
 """
 
 import json
@@ -525,77 +528,42 @@ def configure_env_vars(current_env: dict[str, str] | None = None) -> dict[str, s
 # ============================================================================
 
 def launch_claude() -> bool:
-    """Launch Claude in a new window."""
-    platform = get_platform()
+    """Launch Claude in the current terminal process.
 
+    Claude runs directly in the current process, allowing it to work seamlessly
+    in SSH sessions, local terminals, and other interactive environments.
+    The launcher will exit after launching Claude to avoid interfering with
+    Claude's input/output handling.
+    """
     try:
         cwd = Path.cwd()
         claude_cmd = get_claude_executable_name()
-        if platform == PLATFORM_WINDOWS:
-            # On Windows, use 'start' to launch in new window, cd to current directory
-            subprocess.Popen(
-                ["start", "cmd", "/k", f"cd /d \"{cwd}\" && {claude_cmd}"],
-                shell=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
-            )
-        elif platform == PLATFORM_DARWIN:
-            # On macOS, use osascript to open a new Terminal tab/window and cd to cwd
-            script = f'tell app "Terminal" to do script "cd \\"{cwd}\\" && claude"'
-            subprocess.Popen(
-                ["osascript", "-e", script],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
-            )
-        elif platform == PLATFORM_LINUX or platform == PLATFORM_WSL:
-            # On Linux/WSL, try to find a terminal emulator with working directory
-            # Note: WSL uses Linux binaries, not .exe
-            terminals = [
-                ["gnome-terminal", "--", "Step", "-c", f"cd '{cwd}' && claude; exec bash"],
-                ["konsole", "--workdir", str(cwd), "-e", "bash", "-c", "claude; exec bash"],
-                ["xterm", "-e", "bash", "-c", f"cd '{cwd}' && claude; exec bash"],
-                ["alacritty", "-e", "bash", "-c", f"cd '{cwd}' && claude; exec bash"],
-                ["terminator", "-e", "bash", "-c", f"cd '{cwd}' && claude; exec bash"],
-            ]
 
-            launched = False
-            for term in terminals:
-                try:
-                    subprocess.Popen(
-                        term,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        start_new_session=True
-                    )
-                    launched = True
-                    break
-                except (FileNotFoundError, OSError):
-                    continue
+        # Load the environment settings from config file
+        settings_path = find_or_create_settings()
+        settings = load_settings(settings_path)
+        env_vars = settings.get("env", {})
 
-            if not launched:
-                # Fallback: just run in background
-                subprocess.Popen(
-                    ["claude"],
-                    cwd=str(cwd),
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    start_new_session=True
-                )
-        else:
-            # Generic fallback
-            subprocess.Popen(
-                ["claude"],
-                cwd=str(cwd),
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True
-            )
+        # Build environment with Claude settings
+        env = os.environ.copy()
+        env.update(env_vars)
 
-        text = Text.from_markup("[green]Claude is launching in a new window...[/green]")
+        # Run Claude in the current process with configured environment
+        result = subprocess.run(
+            [claude_cmd],
+            cwd=str(cwd),
+            env=env,
+        )
+
+        text = Text.from_markup("[green]Claude is now running in this terminal.[/green]")
         console.print(create_panel(text))
-        console.print("[dim]This launcher will now exit.[/dim]")
-        return True
+        console.print("[dim]This launcher will now exit to avoid interfering with Claude's input/output.[/dim]")
+        return result.returncode == 0
 
+    except FileNotFoundError:
+        text = Text.from_markup("[red]Claude executable not found. Please install Claude first.[/red]")
+        console.print(create_panel(text))
+        return False
     except Exception as e:
         text = Text.from_markup(f"[red]Failed to launch Claude: {e}[/red]")
         console.print(create_panel(text))
@@ -707,7 +675,7 @@ def main() -> None:
     # Check if Claude is installed
     console.print(claude_code_install_panel())
     if not check_claude_installed():
-        raise typer.Exit(code=1)    
+        raise typer.Exit(code=1)
 
     # Update Claude
     console.print(claude_code_update_panel())
@@ -715,7 +683,7 @@ def main() -> None:
     # Display and configure settings
     console.print(claude_code_settings_table_panel())
 
-    # Launch Claude
+    # Launch Claude in current terminal
     console.print("[bold]Launching Claude...[/bold]")
     if launch_claude():
         console.print()
@@ -728,7 +696,7 @@ def main() -> None:
 
 app = typer.Typer(
     name="claude-launcher",
-    help="Claude Code Launcher - Install, update, configure, and launch Claude Code",
+    help="Claude Code Launcher - Install, update, configure, and launch Claude Code in current terminal",
     add_completion=False,
 )
 
