@@ -17,6 +17,7 @@ in SSH sessions, local terminals, and other interactive environments.
 
 import json
 import os
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -143,6 +144,82 @@ def check_claude_installed() -> bool:
     )
 
 
+def get_local_claude_version() -> str | None:
+    """Get the currently installed Claude version."""
+    try:
+        result = subprocess.run(
+            ["claude", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        # Expected output format: "2.1.50 (Claude Code)" or "claude 2.1.50"
+        if result.returncode == 0 and result.stdout.strip():
+            # Extract version number (first sequence of numbers and dots)
+            match = re.search(r'^(\d+(?:\.\d+)*)', result.stdout.strip())
+            if match:
+                return match.group(1)
+    except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+        pass
+    return None
+
+
+def get_latest_claude_version() -> str | None:
+    """Fetch the latest Claude version from Google Cloud Storage."""
+    try:
+        import urllib.request
+        import urllib.error
+        import ssl
+
+        url = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/latest"
+        # Disable SSL verification for self-signed certificates
+        context = ssl._create_unverified_context()
+        req = urllib.request.Request(url, headers={"User-Agent": "ClaudeLauncher/1.0"})
+        with urllib.request.urlopen(req, timeout=15, context=context) as response:
+            return response.read().decode().strip()
+    except (urllib.error.URLError, urllib.error.HTTPError, Exception):
+        pass
+    return None
+
+
+def parse_version(version: str) -> tuple[int, int, int]:
+    """Parse version string into (major, minor, patch) tuple."""
+    # Handle date format (YYYY-MM-DD)
+    if re.match(r'^\d{4}-\d{2}-\d{2}$', version):
+        date_parts = version.split('-')
+        try:
+            return (int(date_parts[0]), int(date_parts[1]), int(date_parts[2]))
+        except (ValueError, IndexError):
+            pass
+
+    # Handle standard version format (X.Y.Z)
+    parts = version.split('.')
+    try:
+        major = int(parts[0])
+        minor = int(parts[1]) if len(parts) > 1 else 0
+        patch = int(parts[2]) if len(parts) > 2 else 0
+        return (major, minor, patch)
+    except (ValueError, IndexError):
+        return (0, 0, 0)
+
+
+def compare_versions(local_ver: str, remote_ver: str) -> int:
+    """Compare local and remote versions. Returns:
+    -1: local is older
+     0: versions are equal
+     1: local is newer
+    """
+    local_parts = parse_version(local_ver)
+    remote_parts = parse_version(remote_ver)
+
+    for l, r in zip(local_parts, remote_parts):
+        if l < r:
+            return -1
+        elif l > r:
+            return 1
+    return 0
+
+
 def run_install_script() -> bool:
     """Run the OS-specific installation script."""
     platform = get_platform()
@@ -234,12 +311,26 @@ def run_subprocess_with_spinner(command: list[str], spinner_text: str, timeout: 
         return False
 
 
-def update_claude() -> bool:
-    """Update Claude to the latest version."""
-    return run_subprocess_with_spinner(
-        [get_claude_executable_name(), "update"],
-        spinner_text="Updating Claude..."
-    )
+def update_claude_if_needed() -> bool:
+    """Check if Claude needs updating and update if necessary.
+
+    Returns:
+        True if update was performed or no update needed, False if failed
+    """
+    local_version = get_local_claude_version()
+    remote_version = get_latest_claude_version()
+
+    if not local_version or not remote_version:
+        return True
+
+    comparison = compare_versions(local_version, remote_version)
+    if comparison < 0:
+        return run_subprocess_with_spinner(
+            [get_claude_executable_name(), "update"],
+            spinner_text="Updating Claude..."
+        )
+    else:
+        return True
 
 
 # ============================================================================
@@ -613,16 +704,16 @@ def claude_code_install_panel() -> Panel:
 
 def claude_code_update_panel() -> Panel:
     """Return a formatted panel for the update step."""
-    if  update_claude():
+    if update_claude_if_needed():
         text = Text.from_markup(
-            "[green]Claude updated successfully![/green]"
+            "[green]Update check completed successfully![/green]"
         )
-        return create_panel(text, subtitle="Updating Claude Code")
+        return create_panel(text, subtitle="Checking for Updates")
     else:
         text = Text.from_markup(
-            "[yellow]Failed to update Claude. You can continue with the existing version or try updating manually.[/yellow]"
+            "[yellow]Failed to check for updates. You can try updating manually.[/yellow]"
         )
-        return create_panel(text, subtitle="Updating Claude Code")
+        return create_panel(text, subtitle="Checking for Updates")
 
 
 def claude_code_display_settings_panel(env: dict[str, str], subtitle: str) -> Panel:
@@ -682,7 +773,7 @@ def main() -> None:
     if not check_claude_installed():
         raise typer.Exit(code=1)
 
-    # Update Claude
+    # Check for updates (only runs if newer version is available)
     console.print(claude_code_update_panel())
 
     # Display and configure settings
